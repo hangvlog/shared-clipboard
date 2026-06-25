@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Install dependencies (clipboard_core)
+        working-directory: ./clipboard_core
+        run: dart pub get
+
+      - name: Analyze (clipboard_core)
+        working-directory: ./clipboard_core
+        run: dart analyze --fatal-infos
+
+      - name: Install dependencies (clipboard_app)
+        working-directory: ./clipboard_app
+        run: flutter pub get
+
+      - name: Analyze (clipboard_app)
+        working-directory: ./clipboard_app
+        run: flutter analyze --fatal-infos
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Test clipboard_core
+        working-directory: ./clipboard_core
+        run: |
+          dart pub get
+          dart test
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Android APK
+        working-directory: ./clipboard_app
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: clipboard_app/build/app/outputs/flutter-apk/app-release.apk
