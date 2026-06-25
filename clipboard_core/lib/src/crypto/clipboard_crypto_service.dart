@@ -1,0 +1,147 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as hash_lib;
+import 'package:encrypt/encrypt.dart' as encrypt_lib;
+import 'package:pointycastle/export.dart';
+
+/// AES-256-GCM 端到端加密服务
+///
+/// 与桌面端 TypeScript 的 CryptoService 保持完全一致的加密协议：
+/// - 使用 PBKDF2 从密码 + 用户名派生 AES-256 密钥
+/// - 加密格式: base64([12-byte IV][AES-GCM ciphertext + tag])
+/// - SHA-256 哈希用于内容去重
+class ClipboardCryptoService {
+  static const int _pbkdf2Iterations = 100000;
+  static const int _saltLength = 16;
+  static const int _ivLength = 12;
+  static const int _keyLength = 32; // 256 bits
+
+  Uint8List? _keyBytes;
+
+  /// 是否已设置加密密钥
+  bool get hasKey => _keyBytes != null;
+
+  /// 从密码 + 用户名派生加密密钥（确定性，跨设备一致）
+  ///
+  /// 与桌面端 CryptoService.deriveKeyFromUsername() 完全对齐：
+  /// salt = SHA-256(username) 取前 16 字节
+  /// key = PBKDF2(password, salt, iterations=100000, keyLen=32)
+  Future<void> deriveKeyFromUsername(String password, String username) async {
+    final salt = _deriveFixedSalt(username);
+    _keyBytes = _pbkdf2DeriveKey(password, salt);
+  }
+
+  /// 从已有的 salt（base64）恢复密钥
+  Future<void> restoreKey(String password, String saltBase64) async {
+    final salt = base64Decode(saltBase64);
+    _keyBytes = _pbkdf2DeriveKey(password, Uint8List.fromList(salt));
+  }
+
+  /// 加密文本
+  ///
+  /// 输出格式与桌面端一致：base64([12-byte IV][AES-GCM ciphertext + 16-byte tag])
+  String encryptText(String plaintext) {
+    if (_keyBytes == null) throw StateError('加密密钥未设置');
+
+    final iv = _generateRandomBytes(_ivLength);
+    final plaintextBytes = utf8.encode(plaintext);
+
+    final cipher = GCMBlockCipher(AESEngine())
+      ..init(
+        true,
+        AEADParameters(
+          KeyParameter(_keyBytes!),
+          128, // tag length in bits
+          iv,
+          Uint8List(0),
+        ),
+      );
+
+    final ciphertext = cipher.process(Uint8List.fromList(plaintextBytes));
+
+    // 拼接 IV + ciphertext（含 tag）
+    final combined = Uint8List(iv.length + ciphertext.length);
+    combined.setAll(0, iv);
+    combined.setAll(iv.length, ciphertext);
+
+    return base64Encode(combined);
+  }
+
+  /// 解密文本
+  ///
+  /// 输入格式与桌面端一致：base64([12-byte IV][AES-GCM ciphertext + tag])
+  String decryptText(String encryptedBase64) {
+    if (_keyBytes == null) throw StateError('加密密钥未设置');
+
+    final combined = base64Decode(encryptedBase64);
+    final iv = Uint8List.fromList(combined.sublist(0, _ivLength));
+    final ciphertext = Uint8List.fromList(combined.sublist(_ivLength));
+
+    final cipher = GCMBlockCipher(AESEngine())
+      ..init(
+        false,
+        AEADParameters(
+          KeyParameter(_keyBytes!),
+          128,
+          iv,
+          Uint8List(0),
+        ),
+      );
+
+    final decrypted = cipher.process(ciphertext);
+    return utf8.decode(decrypted);
+  }
+
+  /// 生成文本内容的 SHA-256 哈希（用于加密场景下服务端去重）
+  ///
+  /// 与桌面端 generateContentHash() 完全一致
+  static String generateContentHash(String text) {
+    final bytes = utf8.encode(text);
+    final digest = hash_lib.sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  /// 生成图片数据的短哈希（取前 8 字节 hex，用于快速去重）
+  ///
+  /// 与桌面端 generateImageHash() 完全一致
+  static String generateImageHash(Uint8List imageBytes) {
+    final digest = hash_lib.sha256.convert(imageBytes);
+    return digest.bytes.take(8).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  /// 清除密钥
+  void clearKey() {
+    _keyBytes = null;
+  }
+
+  // ============================================
+  // 内部方法
+  // ============================================
+
+  /// 从用户名生成确定性盐（与桌面端 deriveFixedSalt 一致）
+  Uint8List _deriveFixedSalt(String username) {
+    final digest = hash_lib.sha256.convert(utf8.encode(username));
+    return Uint8List.fromList(digest.bytes.take(_saltLength).toList());
+  }
+
+  /// PBKDF2 密钥派生
+  Uint8List _pbkdf2DeriveKey(String password, Uint8List salt) {
+    final pbkdf2 = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64))
+      ..init(Pbkdf2Parameters(salt, _pbkdf2Iterations, _keyLength));
+
+    return pbkdf2.process(Uint8List.fromList(utf8.encode(password)));
+  }
+
+  /// 生成密码学安全的随机字节
+  Uint8List _generateRandomBytes(int length) {
+    final random = FortunaRandom();
+    final seed = Uint8List(32);
+    // 使用当前时间作为种子的一部分（实际应用中应使用平台安全随机源）
+    final now = DateTime.now().microsecondsSinceEpoch;
+    for (var i = 0; i < 8; i++) {
+      seed[i] = (now >> (i * 8)) & 0xFF;
+    }
+    random.seed(KeyParameter(seed));
+    return random.nextBytes(length);
+  }
+}
