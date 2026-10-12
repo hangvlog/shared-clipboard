@@ -1,8 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clipboard_app/main.dart';
+import 'package:clipboard_app/widgets/clipboard_detail.dart';
+import 'package:clipboard_app/widgets/clipboard_item_tile.dart';
+import 'package:clipboard_core/clipboard_core.dart';
 
 void main() {
+  testWidgets('Long text detail is selectable and history tile fits a phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final content = List.generate(30, (i) => '完整内容第 $i 行').join('\n');
+    final item = ClipboardItem(
+      id: 'fixture',
+      content: content,
+      contentType: 'text',
+      deviceId: 'mac',
+      deviceName: 'A long desktop device name for layout',
+      createdAt: DateTime.now().toIso8601String(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ClipboardItemTile(
+              item: item,
+              onCopy: () {},
+              onDelete: () {},
+              onView: () => showClipboardDetail(
+                context,
+                read: () async => item,
+                copy: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('查看完整内容'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectableText), findsOneWidget);
+    expect(
+      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      content,
+    );
+    expect(tester.takeException(), isNull);
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectableText), findsNothing);
+  });
   for (final viewport in <Size>[
     const Size(390, 844),
     const Size(768, 1024),

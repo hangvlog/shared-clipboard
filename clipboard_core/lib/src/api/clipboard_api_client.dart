@@ -32,6 +32,29 @@ class ClipboardApiClient {
     if (config.token != null) 'Authorization': 'Bearer ${config.token}',
   };
 
+  /// Read only the authenticated account's existing cross-device configuration.
+  /// No password is logged, stored locally or uploaded by this method.
+  Future<String?> getAccountEncryptionPassword() async {
+    final response = await _client
+        .get(
+          Uri.parse('${config.apiBaseUrl}/auth/encryption-salt'),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) throw ApiException('读取账号加密配置失败');
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (body['code'] != 1 && body['code'] != 200) {
+      throw ApiException('读取账号加密配置失败');
+    }
+    final encoded = body['data']?['password'];
+    if (encoded == null || encoded == '') return null;
+    if (encoded is! String || encoded.length > 16384) {
+      throw ApiException('账号加密配置格式不正确');
+    }
+    // Matches CloudDrive's btoa(encodeURIComponent(password)) protocol.
+    return Uri.decodeComponent(utf8.decode(base64Decode(encoded)));
+  }
+
   /// GET /clipboard/history - 获取剪贴板历史记录
   ///
   /// [limit] 最大返回条数，默认 200

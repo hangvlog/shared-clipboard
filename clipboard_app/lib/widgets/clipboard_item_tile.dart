@@ -6,13 +6,15 @@ import 'package:clipboard_core/clipboard_core.dart';
 class ClipboardItemTile extends StatelessWidget {
   final ClipboardItem item;
   final VoidCallback onCopy;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
+  final VoidCallback? onView;
 
   const ClipboardItemTile({
     super.key,
     required this.item,
     required this.onCopy,
     required this.onDelete,
+    this.onView,
   });
 
   @override
@@ -22,7 +24,7 @@ class ClipboardItemTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: InkWell(
-        onTap: onCopy,
+        onTap: onView ?? onCopy,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -38,13 +40,17 @@ class ClipboardItemTile extends StatelessWidget {
                   // 设备图标
                   Icon(_getDeviceIcon(), size: 14, color: colorScheme.outline),
                   const SizedBox(width: 4),
-                  Text(
-                    item.deviceName,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colorScheme.outline,
+                  Flexible(
+                    child: Text(
+                      item.deviceName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colorScheme.outline,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   // 时间
                   Icon(Icons.access_time, size: 14, color: colorScheme.outline),
                   const SizedBox(width: 4),
@@ -59,19 +65,31 @@ class ClipboardItemTile extends StatelessWidget {
                   // 类型标签
                   _buildTypeBadge(context),
                   const SizedBox(width: 8),
+                  if (onView != null)
+                    IconButton(
+                      tooltip: '查看完整内容',
+                      onPressed: onView,
+                      icon: const Icon(Icons.visibility_outlined, size: 18),
+                    ),
+                  IconButton(
+                    tooltip: '复制',
+                    onPressed: onCopy,
+                    icon: const Icon(Icons.copy, size: 18),
+                  ),
                   // 删除按钮
-                  InkWell(
-                    onTap: onDelete,
-                    borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.close,
-                        size: 16,
-                        color: colorScheme.outline,
+                  if (onDelete != null)
+                    InkWell(
+                      onTap: onDelete,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: colorScheme.outline,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -82,8 +100,11 @@ class ClipboardItemTile extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context) {
-    if (item.metadataOnly && item.contentType == "image") {
-      return const Text("图片 · 点按下载并复制");
+    if (item.encrypted) {
+      return Text(item.content.isEmpty ? '加密记录 · 请解锁后查看' : item.content);
+    }
+    if (item.metadataOnly && item.contentType == 'image') {
+      return const Text('图片 · 点按查看');
     }
     switch (item.contentType) {
       case 'image':

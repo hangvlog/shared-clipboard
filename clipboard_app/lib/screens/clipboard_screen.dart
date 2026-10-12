@@ -4,6 +4,8 @@ import 'package:clipboard_core/clipboard_core.dart';
 import '../stores/clipboard_store.dart';
 import '../stores/auth_store.dart';
 import '../widgets/clipboard_item_tile.dart';
+import '../widgets/clipboard_detail.dart';
+import 'dart:io';
 
 /// 剪贴板主页面
 class ClipboardScreen extends StatelessWidget {
@@ -77,7 +79,26 @@ class ClipboardScreen extends StatelessWidget {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 960),
-          child: _buildBody(context, store),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  Platform.isAndroid
+                      ? '在其他应用复制后，切回此应用自动同步。后台无法读取其他应用的剪贴板。'
+                      : '手机/平板请点按同步；后台不持续读取剪贴板。',
+                ),
+              ),
+              if (store.syncNotice != null) Text(store.syncNotice!),
+              if (store.encryptionNotice != null) Text(store.encryptionNotice!),
+              if (store.needsUnlock)
+                TextButton(
+                  onPressed: () => _unlock(context, store, authStore.username!),
+                  child: const Text('部分记录需要原加密密码，点此解锁'),
+                ),
+              Expanded(child: _buildBody(context, store)),
+            ],
+          ),
         ),
       ),
       // 悬浮按钮：同步当前剪贴板
@@ -114,7 +135,7 @@ class ClipboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '同账号电脑端复制后同步；手机端请点击下方按钮',
+              '同账号记录会显示在这里；可点击下方按钮重试同步',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
@@ -134,6 +155,11 @@ class ClipboardScreen extends StatelessWidget {
           return ClipboardItemTile(
             item: item,
             onCopy: () => _copyItem(context, store, item),
+            onView: () => showClipboardDetail(
+              context,
+              read: () => store.readItem(item),
+              copy: (full) => store.copyItem(full),
+            ),
             onDelete: () => _confirmDelete(context, store, item),
           );
         },
@@ -218,7 +244,24 @@ class ClipboardScreen extends StatelessWidget {
       ),
     );
     if (password != null && password.isNotEmpty) {
-      await store.unlock(password, username);
+      try {
+        await store.unlock(password, username);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                store.needsUnlock ? '已尝试解锁；仍锁定的记录可能使用其他密码' : '已解锁同账号记录',
+              ),
+            ),
+          );
+        }
+      } catch (_) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('解锁失败，请检查密码或网络')));
+        }
+      }
     }
   }
 

@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:clipboard_core/clipboard_core.dart';
 import '../services/env_config.dart';
 import '../services/flutter_platform_adapter.dart';
 import 'auth_store.dart';
+import '../services/foreground_clipboard_sync.dart';
+import '../services/android_clipboard_events.dart';
+import '../services/mobile_diagnostics.dart';
 
 /// 剪贴板状态管理（Provider）
 ///
@@ -12,24 +16,54 @@ import 'auth_store.dart';
 class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   ClipboardStore() {
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isAndroid) _androidEvents.start(() => _autoSync?.changed());
   }
+  final _diagnostics = MobileDiagnostics(
+    endpoint: EnvConfig.isProduction ? EnvConfig.logEndpoint : '',
+  );
+  final _androidEvents = AndroidClipboardEvents();
+  ForegroundClipboardSync? _autoSync;
+  String? syncNotice;
+  bool get needsUnlock => _items.any(
+    (item) =>
+        item.encrypted &&
+        (!(_manager?.hasEncryptionKey ?? false) ||
+            item.content.contains('其他加密密码')),
+  );
+  String? get encryptionNotice => _manager?.encryptionNotice;
   String? _token;
   int _generation = 0;
   bool _disposed = false;
   bool get _background =>
-      WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused ||
-      WidgetsBinding.instance.lifecycleState == AppLifecycleState.hidden;
+      WidgetsBinding.instance.lifecycleState != null &&
+      WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
+    if (state != AppLifecycleState.resumed) {
+      _diagnostics.pause();
+      _autoSync?.pause();
       _manager?.suspend();
       PaintingBinding.instance.imageCache.clear();
     } else if (state == AppLifecycleState.resumed) {
-      _manager?.resume().catchError((Object e) {
-        debugPrint('[Clipboard] Resume failed: $e');
-      });
+      _diagnostics.resume();
+      final generation = _generation;
+      _manager
+          ?.resume()
+          .then((_) {
+            if (Platform.isAndroid &&
+                !_background &&
+                !_disposed &&
+                generation == _generation) {
+              _autoSync?.enabled = true;
+              _autoSync?.changed();
+            }
+          })
+          .catchError((Object _) {
+            if (_disposed || generation != _generation) return;
+            syncNotice = '恢复同步失败，请点按刷新';
+            if (!_disposed) notifyListeners();
+          });
     }
   }
 
@@ -75,8 +109,35 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
       manager = ClipboardManager(
         config: EnvConfig.createConfig(token: token),
         platform: platform,
+        accountUsername: username,
+        autoCopyRemote: false,
+        clipboardWrite: (write) async {
+          if (_autoSync != null) {
+            await _autoSync!.suppressDuring(write);
+          } else {
+            await write();
+          }
+        },
       );
       _manager = manager;
+      if (Platform.isAndroid) {
+        _autoSync = ForegroundClipboardSync(
+          read: platform.readClipboard,
+          send: (content) => _sendContent(content, generation),
+          status: (message) {
+            if (_disposed || generation != _generation) return;
+            unawaited(
+              _diagnostics.report(
+                message == '剪贴板已自动同步'
+                    ? MobileEvent.autoSynced
+                    : MobileEvent.autoSyncFailed,
+              ),
+            );
+            syncNotice = message;
+            notifyListeners();
+          },
+        );
+      }
       if (_background) manager.suspend();
       _itemsSub = manager.itemsStream.listen((items) {
         if (_disposed || generation != _generation) return;
@@ -94,11 +155,20 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
         await platform.close();
         return;
       }
+      unawaited(
+        _diagnostics.report(
+          manager.encryptionNotice == null
+              ? MobileEvent.initialized
+              : MobileEvent.accountConfigUnavailable,
+        ),
+      );
       _isInitialized = true;
+      _autoSync?.enabled = !_background;
+      _autoSync?.changed();
     } catch (e) {
       manager?.dispose();
       if (!_disposed && generation == _generation) {
-        debugPrint('[ClipboardStore] 初始化失败: $e');
+        unawaited(_diagnostics.report(MobileEvent.initializationFailed));
       }
     } finally {
       if (!_disposed && generation == _generation) {
@@ -118,31 +188,50 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       final generation = _generation;
+      if (_background) throw StateError('请在应用前台同步');
       final content = await _platform!.readClipboard();
       if (generation != _generation || _disposed) return;
       if (content == null) throw StateError('剪贴板为空或不支持该格式');
 
-      switch (content.contentType) {
-        case 'text':
-          if (content.text != null && content.text!.isNotEmpty) {
-            await _manager!.addTextItem(content.text!);
-          }
-          break;
-        case 'image':
-          if (content.imageBytes != null) {
-            await _addImageItem(content.imageBytes!);
-          }
-          break;
-        case 'rich':
-          if (content.imageBytes != null) {
-            await _addRichItem(content.text ?? '', content.imageBytes!);
-          } else if (content.text != null) {
-            await _manager!.addTextItem(content.text!);
-          }
-          break;
-      }
+      await _sendContent(content, generation);
+      await _autoSync?.suppressCurrent();
     } catch (e) {
       debugPrint('[ClipboardStore] 同步剪贴板失败');
+      rethrow;
+    }
+  }
+
+  Future<void> _sendContent(ClipboardContent content, int generation) async {
+    if (_disposed || _background || generation != _generation) {
+      throw StateError('同步已取消，请返回应用重试');
+    }
+    switch (content.contentType) {
+      case 'text':
+        if (content.text?.isNotEmpty == true) {
+          await _manager!.addTextItem(content.text!);
+        }
+        break;
+      case 'image':
+        if (content.imageBytes != null) {
+          await _addImageItem(content.imageBytes!);
+        }
+        break;
+      case 'rich':
+        if (content.imageBytes != null) {
+          await _addRichItem(content.text ?? '', content.imageBytes!);
+        } else if (content.text?.isNotEmpty == true) {
+          await _manager!.addTextItem(content.text!);
+        }
+        break;
+    }
+  }
+
+  Future<ClipboardItem> readItem(ClipboardItem item) async {
+    if (_manager == null) throw StateError('尚未登录');
+    try {
+      return await _manager!.readItem(item);
+    } catch (_) {
+      unawaited(_diagnostics.report(MobileEvent.readFailed));
       rethrow;
     }
   }
@@ -183,9 +272,10 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
+      await _manager?.restoreAccountEncryption();
       await _manager?.syncWithServer();
     } catch (e) {
-      debugPrint('[ClipboardStore] 刷新失败: $e');
+      unawaited(_diagnostics.report(MobileEvent.historyFailed));
     } finally {
       _isLoading = false;
       if (!_disposed) notifyListeners();
@@ -218,6 +308,9 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
   void _cleanup() {
     _generation++;
+    _autoSync?.dispose();
+    _autoSync = null;
+    syncNotice = null;
     _itemsSub?.cancel();
     _connectionSub?.cancel();
     _manager?.dispose();
@@ -235,6 +328,8 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    _diagnostics.dispose();
+    _androidEvents.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _cleanup();
     super.dispose();
