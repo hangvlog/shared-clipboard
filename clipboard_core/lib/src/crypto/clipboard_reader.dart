@@ -9,12 +9,13 @@ class ClipboardReader {
   ClipboardReader(this.api, this.crypto);
 
   ClipboardItem decrypt(ClipboardItem item) {
-    if (item.metadataOnly)
+    if (item.metadataOnly) {
       return preview(
         item.copyWith(
           content: crypto.hasKey ? '加密记录 · 点按查看' : '加密记录 · 需要原密码解锁',
         ),
       );
+    }
     if (!item.encrypted) return item;
     if (!crypto.hasKey) return item.copyWith(content: '需要原加密密码解锁');
     try {
