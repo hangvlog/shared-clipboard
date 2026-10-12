@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as hash_lib;
-import 'package:encrypt/encrypt.dart' as encrypt_lib;
 import 'package:pointycastle/export.dart';
 
 /// AES-256-GCM 端到端加密服务
@@ -80,12 +80,7 @@ class ClipboardCryptoService {
     final cipher = GCMBlockCipher(AESEngine())
       ..init(
         false,
-        AEADParameters(
-          KeyParameter(_keyBytes!),
-          128,
-          iv,
-          Uint8List(0),
-        ),
+        AEADParameters(KeyParameter(_keyBytes!), 128, iv, Uint8List(0)),
       );
 
     final decrypted = cipher.process(ciphertext);
@@ -106,7 +101,10 @@ class ClipboardCryptoService {
   /// 与桌面端 generateImageHash() 完全一致
   static String generateImageHash(Uint8List imageBytes) {
     final digest = hash_lib.sha256.convert(imageBytes);
-    return digest.bytes.take(8).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return digest.bytes
+        .take(8)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
   }
 
   /// 清除密钥
@@ -134,14 +132,9 @@ class ClipboardCryptoService {
 
   /// 生成密码学安全的随机字节
   Uint8List _generateRandomBytes(int length) {
-    final random = FortunaRandom();
-    final seed = Uint8List(32);
-    // 使用当前时间作为种子的一部分（实际应用中应使用平台安全随机源）
-    final now = DateTime.now().microsecondsSinceEpoch;
-    for (var i = 0; i < 8; i++) {
-      seed[i] = (now >> (i * 8)) & 0xFF;
-    }
-    random.seed(KeyParameter(seed));
-    return random.nextBytes(length);
+    final random = Random.secure();
+    return Uint8List.fromList(
+      List.generate(length, (_) => random.nextInt(256)),
+    );
   }
 }

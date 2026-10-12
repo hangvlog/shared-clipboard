@@ -19,11 +19,13 @@ class ClipboardSyncService {
   sio.Socket? _socket;
   SyncConnectionState _connectionState = SyncConnectionState.disconnected;
 
-  final _connectionStateController = StreamController<SyncConnectionState>.broadcast();
+  final _connectionStateController =
+      StreamController<SyncConnectionState>.broadcast();
   final _clipboardSyncController = StreamController<ClipboardItem>.broadcast();
 
   /// 连接状态变化流
-  Stream<SyncConnectionState> get connectionState => _connectionStateController.stream;
+  Stream<SyncConnectionState> get connectionState =>
+      _connectionStateController.stream;
 
   /// 接收到其他设备剪贴板同步数据的流
   Stream<ClipboardItem> get onClipboardSync => _clipboardSyncController.stream;
@@ -34,16 +36,13 @@ class ClipboardSyncService {
   /// 是否已连接
   bool get isConnected => _connectionState == SyncConnectionState.connected;
 
-  ClipboardSyncService({
-    required this.config,
-    required this.deviceInfo,
-  });
+  ClipboardSyncService({required this.config, required this.deviceInfo});
 
   /// 连接到 Socket.IO 服务器
   ///
   /// 对应桌面端 socketService.connect(token)
   void connect() {
-    if (_socket?.connected == true) return;
+    if (_socket != null) return;
 
     _updateState(SyncConnectionState.connecting);
 
@@ -54,7 +53,8 @@ class ClipboardSyncService {
       config.wsBaseUrl,
       sio.OptionBuilder()
           .setTransports(['websocket', 'polling'])
-          .enableAutoConnect()
+          .disableAutoConnect()
+          .enableForceNew()
           .enableReconnection()
           .setReconnectionAttempts(double.maxFinite.toInt())
           .setReconnectionDelay(1000)
@@ -63,7 +63,6 @@ class ClipboardSyncService {
     );
 
     _socket!.onConnect((_) {
-      _updateState(SyncConnectionState.connected);
       _registerDevice();
     });
 
@@ -98,13 +97,25 @@ class ClipboardSyncService {
   ///
   /// 对应桌面端 socketService.registerDevice(token)
   void _registerDevice() {
-    _socket?.emitWithAck('register_device', {
-      'deviceId': deviceInfo.deviceId,
-      'deviceType': deviceInfo.deviceType,
-      'deviceName': deviceInfo.deviceName,
-      'platform': deviceInfo.platform,
-      'token': config.token,
-    });
+    final socket = _socket;
+    socket?.emitWithAck(
+      'register_device',
+      {
+        'deviceId': deviceInfo.deviceId,
+        'deviceType': deviceInfo.deviceType,
+        'deviceName': deviceInfo.deviceName,
+        'platform': deviceInfo.platform,
+        'token': config.token,
+      },
+      ack: (data) {
+        if (_socket != socket) return;
+        _updateState(
+          data is Map && data['success'] == true
+              ? SyncConnectionState.connected
+              : SyncConnectionState.disconnected,
+        );
+      },
+    );
   }
 
   /// 广播剪贴板内容到其他设备
@@ -123,6 +134,7 @@ class ClipboardSyncService {
   }
 
   void _updateState(SyncConnectionState state) {
+    if (_connectionStateController.isClosed || state == _connectionState) { return; }
     _connectionState = state;
     _connectionStateController.add(state);
   }

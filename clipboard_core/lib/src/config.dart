@@ -42,8 +42,8 @@ class ClipboardConfig {
   /// 生产环境默认配置
   factory ClipboardConfig.production() {
     return ClipboardConfig(
-      apiBaseUrl: 'http://62.234.124.12:6313',
-      wsBaseUrl: 'http://62.234.124.12:6313',
+      apiBaseUrl: 'https://clawkit.chat/api',
+      wsBaseUrl: 'https://clawkit.chat',
     );
   }
 }

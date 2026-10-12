@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+import 'package:flutter/widgets.dart';
 import 'package:clipboard_core/clipboard_core.dart';
 import '../services/env_config.dart';
 import '../services/flutter_platform_adapter.dart';
@@ -8,7 +9,30 @@ import 'auth_store.dart';
 /// 剪贴板状态管理（Provider）
 ///
 /// 连接 clipboard_core SDK 的 ClipboardManager 与 Flutter UI 层。
-class ClipboardStore extends ChangeNotifier {
+class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
+  ClipboardStore() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+  String? _token;
+  int _generation = 0;
+  bool _disposed = false;
+  bool get _background =>
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused ||
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.hidden;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _manager?.suspend();
+      PaintingBinding.instance.imageCache.clear();
+    } else if (state == AppLifecycleState.resumed) {
+      _manager?.resume().catchError((Object e) {
+        debugPrint('[Clipboard] Resume failed: $e');
+      });
+    }
+  }
+
   ClipboardManager? _manager;
   FlutterPlatformAdapter? _platform;
 
@@ -27,50 +51,60 @@ class ClipboardStore extends ChangeNotifier {
 
   /// 当 AuthStore 变化时调用
   void updateAuth(AuthStore authStore) {
-    if (authStore.isLoggedIn && !_isInitialized) {
-      _initialize(authStore.token!, authStore.username!, authStore.nickname);
-    } else if (!authStore.isLoggedIn && _isInitialized) {
-      _cleanup();
+    if (_token == authStore.token) return;
+    _cleanup();
+    _token = authStore.token;
+    if (_token != null && authStore.username != null) {
+      _initialize(_token!, authStore.username!);
     }
   }
 
-  /// 初始化 SDK
-  Future<void> _initialize(String token, String username, String? nickname) async {
+  Future<void> _initialize(String token, String username) async {
+    final generation = _generation;
+    final platform = FlutterPlatformAdapter(accountId: username);
+    _platform = platform;
     _isLoading = true;
-    notifyListeners();
-
+    ClipboardManager? manager;
     try {
-      _platform = FlutterPlatformAdapter();
-
-      final config = EnvConfig.createConfig(token: token);
-      await _platform!.initStorage();
-      await _platform!.loadDeviceName();
-
-      _manager = ClipboardManager(
-        config: config,
-        platform: _platform!,
+      await platform.initStorage();
+      await platform.loadDeviceName();
+      if (_disposed || generation != _generation) {
+        await platform.close();
+        return;
+      }
+      manager = ClipboardManager(
+        config: EnvConfig.createConfig(token: token),
+        platform: platform,
       );
-
-      // 监听条目变化
-      _itemsSub = _manager!.itemsStream.listen((items) {
+      _manager = manager;
+      if (_background) manager.suspend();
+      _itemsSub = manager.itemsStream.listen((items) {
+        if (_disposed || generation != _generation) return;
         _items = items;
         notifyListeners();
       });
-
-      // 监听连接状态
-      _connectionSub = _manager!.connectionState.listen((state) {
+      _connectionSub = manager.connectionState.listen((state) {
+        if (_disposed || generation != _generation) return;
         _isConnected = state == SyncConnectionState.connected;
         notifyListeners();
       });
-
-      await _manager!.init();
-
+      await manager.init();
+      if (_disposed || generation != _generation) {
+        manager.dispose();
+        await platform.close();
+        return;
+      }
       _isInitialized = true;
     } catch (e) {
-      debugPrint('[ClipboardStore] 初始化失败: $e');
+      manager?.dispose();
+      if (!_disposed && generation == _generation) {
+        debugPrint('[ClipboardStore] 初始化失败: $e');
+      }
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!_disposed && generation == _generation) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -83,8 +117,9 @@ class ClipboardStore extends ChangeNotifier {
     if (_manager == null || _platform == null) return;
 
     try {
+      final generation = _generation;
       final content = await _platform!.readClipboard();
-      if (content == null) return;
+      if (content == null || generation != _generation || _disposed) return;
 
       switch (content.contentType) {
         case 'text':
@@ -114,14 +149,16 @@ class ClipboardStore extends ChangeNotifier {
   Future<void> _addImageItem(Uint8List imageBytes) async {
     try {
       // 生成缩略图
-      final preview = await _platform!.generateThumbnail(imageBytes, maxSize: 200);
+      final generation = _generation;
+      final preview = await _platform!.generateThumbnail(
+        imageBytes,
+        maxSize: 200,
+      );
+      if (generation != _generation || _disposed) return;
       // 转为 base64
       final base64Content = _platform!.imageBytesToBase64(imageBytes);
 
-      await _manager!.addImageItem(
-        base64Content,
-        preview: preview,
-      );
+      await _manager!.addImageItem(base64Content, preview: preview);
     } catch (e) {
       debugPrint('[ClipboardStore] 添加图片失败: $e');
       rethrow;
@@ -132,14 +169,16 @@ class ClipboardStore extends ChangeNotifier {
   Future<void> _addRichItem(String text, Uint8List imageBytes) async {
     try {
       // 生成缩略图
-      final preview = await _platform!.generateThumbnail(imageBytes, maxSize: 200);
+      final generation = _generation;
+      final preview = await _platform!.generateThumbnail(
+        imageBytes,
+        maxSize: 200,
+      );
+      if (generation != _generation || _disposed) return;
       // 转为 base64
       final base64Content = _platform!.imageBytesToBase64(imageBytes);
 
-      await _manager!.addImageItem(
-        base64Content,
-        preview: preview,
-      );
+      await _manager!.addImageItem(base64Content, preview: preview);
       // TODO: 后端 API 需要支持真正的图文混合类型
       // 目前先作为图片上传，文本内容在 UI 层展示
     } catch (e) {
@@ -159,7 +198,7 @@ class ClipboardStore extends ChangeNotifier {
       debugPrint('[ClipboardStore] 刷新失败: $e');
     } finally {
       _isLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -183,20 +222,30 @@ class ClipboardStore extends ChangeNotifier {
     await _manager?.clearHistory();
   }
 
+  Future<void> unlock(String password, String username) async {
+    await _manager?.setEncryptionKey(password, username);
+  }
+
   void _cleanup() {
+    _generation++;
     _itemsSub?.cancel();
     _connectionSub?.cancel();
     _manager?.dispose();
     _manager = null;
+    if (_isInitialized) {
+      _platform?.close();
+    }
     _platform = null;
+    _isLoading = false;
     _items = [];
     _isConnected = false;
     _isInitialized = false;
-    notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _cleanup();
     super.dispose();
   }

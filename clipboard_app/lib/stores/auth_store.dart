@@ -57,8 +57,8 @@ class AuthStore extends ChangeNotifier {
       if (body['code'] == 1 || body['code'] == 200) {
         final data = body['data'] as Map<String, dynamic>;
         _token = data['token'] as String?;
-        _username = username;
         final userInfo = data['user'] as Map<String, dynamic>?;
+        _username = userInfo?['username'] as String? ?? username;
         _nickname = userInfo?['nickname'] as String? ?? username;
 
         // 持久化

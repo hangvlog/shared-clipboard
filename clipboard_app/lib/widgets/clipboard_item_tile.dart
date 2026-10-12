@@ -122,6 +122,7 @@ class ClipboardItemTile extends StatelessWidget {
             child: Image.memory(
               bytes,
               fit: BoxFit.cover,
+              cacheWidth: 400,
             ),
           ),
         );
@@ -136,6 +137,7 @@ class ClipboardItemTile extends StatelessWidget {
         child: Image.network(
           imageData,
           fit: BoxFit.cover,
+              cacheWidth: 400,
           errorBuilder: (_, _, _) => _buildImagePlaceholder(context),
         ),
       );
@@ -172,13 +174,14 @@ class ClipboardItemTile extends StatelessWidget {
     if (source.startsWith('data:image')) {
       try {
         final bytes = base64Decode(source.split(',').last);
-        return Image.memory(bytes, fit: BoxFit.cover);
+        return Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 400);
       } catch (_) {}
     }
     if (source.startsWith('http')) {
       return Image.network(
         source,
         fit: BoxFit.cover,
+              cacheWidth: 400,
         errorBuilder: (_, _, _) => _buildImagePlaceholder(context),
       );
     }

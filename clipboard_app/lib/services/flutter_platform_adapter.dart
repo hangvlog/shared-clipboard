@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:clipboard_core/clipboard_core.dart';
@@ -19,14 +20,17 @@ import 'package:crypto/crypto.dart' as hash_lib;
 /// - 设备信息获取（device_info_plus）
 /// - 图片缩略图生成（image 库）
 class FlutterPlatformAdapter implements PlatformAdapter {
+  FlutterPlatformAdapter({required this.accountId});
+  final String accountId;
   Database? _db;
   SharedPreferences? _prefs;
   String? _deviceId;
   String? _deviceName;
 
-  static const _dbName = 'clipboard_cache.db';
+  String get _dbName =>
+      'clipboard_cache_${hash_lib.sha256.convert(utf8.encode(accountId))}.db';
   static const _prefsDeviceIdKey = 'clipboard_device_id';
-  static const _prefsSyncTimeKey = 'clipboard_last_sync_time';
+  String get _prefsSyncTimeKey => 'clipboard_last_sync_time:$accountId';
 
   // ============================================
   // 剪贴板操作
@@ -40,51 +44,28 @@ class FlutterPlatformAdapter implements PlatformAdapter {
 
       // 先尝试读取图片（优先级更高，因为图文混合时通常包含文本+图片）
       for (final item in reader.items) {
-        // 尝试读取 PNG 格式
-        final pngFormat = Formats.png as ValueFormat<Uint8List>;
-        if (item.canProvide(pngFormat)) {
-          final imageData = await item.readValue(pngFormat);
-          if (imageData != null && imageData.isNotEmpty) {
-            final hash = _quickHashBytes(imageData);
-
-            // 同时检查是否有文本（图文混合）
-            String? accompanyingText;
+        for (final format in [Formats.png, Formats.jpeg]) {
+          if (!item.canProvide(format)) continue;
+          final loaded = Completer<Uint8List?>();
+          final progress = item.getFile(format, (file) async {
             try {
-              if (item.canProvide(Formats.plainText)) {
-                accompanyingText = await item.readValue(Formats.plainText);
-              }
-            } catch (_) {}
-
-            return ClipboardContent(
-              contentType: accompanyingText != null && accompanyingText.isNotEmpty ? 'rich' : 'image',
-              text: accompanyingText,
-              imageBytes: imageData,
-              hash: hash,
-            );
-          }
-        }
-
-        // 尝试读取 JPEG 格式
-        final jpegFormat = Formats.jpeg as ValueFormat<Uint8List>;
-        if (item.canProvide(jpegFormat)) {
-          final imageData = await item.readValue(jpegFormat);
-          if (imageData != null && imageData.isNotEmpty) {
-            final hash = _quickHashBytes(imageData);
-
-            String? accompanyingText;
-            try {
-              if (item.canProvide(Formats.plainText)) {
-                accompanyingText = await item.readValue(Formats.plainText);
-              }
-            } catch (_) {}
-
-            return ClipboardContent(
-              contentType: accompanyingText != null && accompanyingText.isNotEmpty ? 'rich' : 'image',
-              text: accompanyingText,
-              imageBytes: imageData,
-              hash: hash,
-            );
-          }
+              loaded.complete(await file.readAll());
+            } catch (error) {
+              loaded.completeError(error);
+            }
+          }, onError: loaded.completeError);
+          if (progress == null) continue;
+          final imageData = await loaded.future;
+          if (imageData == null || imageData.isEmpty) continue;
+          final text = item.canProvide(Formats.plainText)
+              ? await item.readValue(Formats.plainText)
+              : null;
+          return ClipboardContent(
+            contentType: text != null && text.isNotEmpty ? 'rich' : 'image',
+            text: text,
+            imageBytes: imageData,
+            hash: _quickHashBytes(imageData),
+          );
         }
       }
 
@@ -171,7 +152,9 @@ class FlutterPlatformAdapter implements PlatformAdapter {
 
   @override
   Future<int> getCachedCount() async {
-    final result = await _db!.rawQuery('SELECT COUNT(*) as cnt FROM clipboard_cache');
+    final result = await _db!.rawQuery(
+      'SELECT COUNT(*) as cnt FROM clipboard_cache',
+    );
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
@@ -195,6 +178,10 @@ class FlutterPlatformAdapter implements PlatformAdapter {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
+    batch.rawDelete(
+      'DELETE FROM clipboard_cache WHERE id NOT IN '
+      '(SELECT id FROM clipboard_cache ORDER BY created_at DESC, id DESC LIMIT 200)',
+    );
     await batch.commit(noResult: true);
   }
 
@@ -215,6 +202,11 @@ class FlutterPlatformAdapter implements PlatformAdapter {
     await upsertItems(items);
   }
 
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
   // ============================================
   // 设备信息
   // ============================================
@@ -225,7 +217,8 @@ class FlutterPlatformAdapter implements PlatformAdapter {
 
     _deviceId = _prefs?.getString(_prefsDeviceIdKey);
     if (_deviceId == null) {
-      _deviceId = 'mobile-${DateTime.now().millisecondsSinceEpoch}-'
+      _deviceId =
+          'mobile-${DateTime.now().millisecondsSinceEpoch}-'
           '${DateTime.now().microsecond.toRadixString(36)}';
       _prefs?.setString(_prefsDeviceIdKey, _deviceId!);
     }
@@ -267,7 +260,10 @@ class FlutterPlatformAdapter implements PlatformAdapter {
   // ============================================
 
   @override
-  Future<String> generateThumbnail(Uint8List imageBytes, {int maxSize = 200}) async {
+  Future<String> generateThumbnail(
+    Uint8List imageBytes, {
+    int maxSize = 200,
+  }) async {
     final image = img.decodeImage(imageBytes);
     if (image == null) throw Exception('无法解码图片');
 

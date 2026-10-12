@@ -6,7 +6,7 @@
 /// - [ClipboardCryptoService] AES-256-GCM 端到端加密
 /// - [ClipboardItem] 统一数据模型
 /// - [PlatformAdapter] 平台适配抽象接口
-library clipboard_core;
+library;
 
 export 'src/models/clipboard_item.dart';
 export 'src/models/device_info.dart';

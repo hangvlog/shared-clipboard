@@ -13,13 +13,13 @@ class EnvConfig {
 
   /// API 基础 URL
   static String get apiBaseUrl {
-    if (isProduction) return 'http://62.234.124.12:6313';
+    if (isProduction) return const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://clawkit.chat/api');
     return 'http://10.0.2.2:6313'; // Android 模拟器访问宿主机
   }
 
   /// WebSocket 基础 URL
   static String get wsBaseUrl {
-    if (isProduction) return 'http://62.234.124.12:6313';
+    if (isProduction) return const String.fromEnvironment('WS_BASE_URL', defaultValue: 'https://clawkit.chat');
     return 'http://10.0.2.2:6313';
   }
 

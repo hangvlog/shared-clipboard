@@ -1,6 +1,6 @@
 name: clipboard_app
 description: 共享剪贴板 - Flutter 移动端（iOS & Android）
-version: 1.0.0+1
+version: 1.0.1+2
 publish_to: 'none'
 
 environment:

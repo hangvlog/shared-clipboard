@@ -37,6 +37,9 @@ class ClipboardScreen extends StatelessWidget {
           PopupMenuButton<String>(
             onSelected: (value) async {
               switch (value) {
+                case 'unlock':
+                  _unlock(context, store, authStore.username!);
+                  break;
                 case 'clear':
                   _showClearConfirm(context, store);
                   break;
@@ -46,6 +49,7 @@ class ClipboardScreen extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(value: 'unlock', child: Text('解锁加密剪贴板')),
               const PopupMenuItem(
                 value: 'clear',
                 child: Row(
@@ -105,7 +109,7 @@ class ClipboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '在任意设备上复制内容，即可自动同步到这里',
+              '同账号电脑端复制后同步；手机端请点击下方按钮',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
@@ -132,7 +136,10 @@ class ClipboardScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _syncClipboard(BuildContext context, ClipboardStore store) async {
+  Future<void> _syncClipboard(
+    BuildContext context,
+    ClipboardStore store,
+  ) async {
     await store.syncCurrentClipboard();
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,7 +151,11 @@ class ClipboardScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _copyItem(BuildContext context, ClipboardStore store, ClipboardItem item) async {
+  Future<void> _copyItem(
+    BuildContext context,
+    ClipboardStore store,
+    ClipboardItem item,
+  ) async {
     await store.copyItem(item);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -156,7 +167,43 @@ class ClipboardScreen extends StatelessWidget {
     }
   }
 
-  void _confirmDelete(BuildContext context, ClipboardStore store, ClipboardItem item) {
+  Future<void> _unlock(
+    BuildContext context,
+    ClipboardStore store,
+    String username,
+  ) async {
+    var input = "";
+    final password = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('解锁加密剪贴板'),
+        content: TextField(
+          onChanged: (value) => input = value,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: '与电脑端相同的云盘加密密码'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, input),
+            child: const Text('解锁'),
+          ),
+        ],
+      ),
+    );
+    if (password != null && password.isNotEmpty) {
+      await store.unlock(password, username);
+    }
+  }
+
+  void _confirmDelete(
+    BuildContext context,
+    ClipboardStore store,
+    ClipboardItem item,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
