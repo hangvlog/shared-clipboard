@@ -14,7 +14,7 @@ Section
  CreateShortcut "$SMPROGRAMS\Shared Clipboard.lnk" "$INSTDIR\shared-clipboard.exe"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "DisplayName" "Shared Clipboard"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "DisplayVersion" "1.1.0"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "UninstallString" '$"$INSTDIR\Uninstall.exe$"'
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "UninstallString" '"$INSTDIR\Uninstall.exe"'
 SectionEnd
 Section "Uninstall"
  Delete "$INSTDIR\shared-clipboard.exe"
