@@ -11,6 +11,9 @@ static NSMutableArray<NSString*> *history;
 @property NSTimer *timer;
 @property BOOL showingLogin;
 @end
+@interface ClipboardApp (History)
+-(void)presentHistory;
+@end
 @implementation ClipboardApp
 -(void)applicationDidFinishLaunching:(NSNotification*)notice {
  [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
@@ -50,15 +53,18 @@ static NSMutableArray<NSString*> *history;
 -(void)quit{native_ws_close();[NSApp terminate:nil];}
 @end
 extern "C" int native_run(){@autoreleasepool{NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(bundle&&[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].count>1)return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
-extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];if([s isEqualToString:@"请登录同一个账号"])[(ClipboardApp*)NSApp.delegate login];});}
+extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];if([s isEqualToString:@"请登录同一个账号"])[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(login) withObject:nil waitUntilDone:NO];});}
 extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{history=[NSMutableArray new];});}
 extern "C" void native_history_item(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{[history addObject:s];});}
-extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{
+extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(presentHistory) withObject:nil waitUntilDone:NO];});}
+@implementation ClipboardApp (History)
+-(void)presentHistory {
  NSAlert *alert=[NSAlert new];alert.messageText=@"历史记录";alert.informativeText=@"选择一条复制；关闭后释放历史内容。";[alert addButtonWithTitle:@"复制"];[alert addButtonWithTitle:@"关闭"];
  NSPopUpButton *list=[[NSPopUpButton alloc]initWithFrame:NSMakeRect(0,0,500,30) pullsDown:NO];[list addItemsWithTitles:history.count?history:@[@"暂无记录"]];alert.accessoryView=list;
  [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn&&history.count)sc_history_select((int)list.indexOfSelectedItem);
  sc_event(9,"");history=nil;
-});}
+}
+@end
 extern "C" char *native_clipboard_text(){@autoreleasepool{
  NSPasteboard *pb=NSPasteboard.generalPasteboard;
  if([pb.types containsObject:NSPasteboardTypeFileURL])return strdup("");
@@ -72,9 +78,24 @@ extern "C" unsigned char *native_clipboard_png(size_t *length){@autoreleasepool{
  if(data.length>2*1024*1024){*length=SIZE_MAX;return nullptr;}if(!data)return nullptr;
  *length=data.length;auto *copy=(unsigned char*)malloc(*length);memcpy(copy,data.bytes,*length);return copy;
 }}
-extern "C" int native_clipboard_write(const char *text,const unsigned char *image,size_t length){
- __block BOOL ok=NO;NSString *value=@(text);NSData *data=length?[NSData dataWithBytes:image length:length]:nil;
- dispatch_sync(dispatch_get_main_queue(),^{NSPasteboardItem *item=[NSPasteboardItem new];if(value.length)[item setString:value forType:NSPasteboardTypeString];if(data){const unsigned char *bytes=(const unsigned char*)data.bytes;NSString *type=(data.length>2&&bytes[0]==0xff&&bytes[1]==0xd8)?@"public.jpeg":NSPasteboardTypePNG;[item setData:data forType:type];}[NSPasteboard.generalPasteboard clearContents];ok=[NSPasteboard.generalPasteboard writeObjects:@[item]];lastChange=NSPasteboard.generalPasteboard.changeCount;});return ok;
+@interface ClipboardWrite : NSObject
+@property NSString *text;
+@property NSData *image;
+@property BOOL success;
+-(void)apply;
+@end
+@implementation ClipboardWrite
+-(void)apply {
+ NSPasteboardItem *item=[NSPasteboardItem new];
+ if(self.text.length)[item setString:self.text forType:NSPasteboardTypeString];
+ if(self.image){const unsigned char *bytes=(const unsigned char*)self.image.bytes;NSString *type=(self.image.length>2&&bytes[0]==0xff&&bytes[1]==0xd8)?@"public.jpeg":NSPasteboardTypePNG;[item setData:self.image forType:type];}
+ [NSPasteboard.generalPasteboard clearContents];self.success=[NSPasteboard.generalPasteboard writeObjects:@[item]];lastChange=NSPasteboard.generalPasteboard.changeCount;
 }
+@end
+extern "C" int native_clipboard_write(const char *text,const unsigned char *image,size_t length){@autoreleasepool{
+ ClipboardWrite *write=[ClipboardWrite new];write.text=@(text);write.image=length?[NSData dataWithBytes:image length:length]:nil;
+ [write performSelectorOnMainThread:@selector(apply) withObject:nil waitUntilDone:YES modes:@[NSRunLoopCommonModes]];
+ return write.success;
+}}
 
 extern "C" void native_clipboard_reset(){lastChange=NSPasteboard.generalPasteboard.changeCount;}

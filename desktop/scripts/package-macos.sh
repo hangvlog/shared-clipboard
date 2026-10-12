@@ -2,6 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 export CARGO_TARGET_DIR="$PWD/target"
+export MACOSX_DEPLOYMENT_TARGET=10.15
 cargo build --release --locked --target aarch64-apple-darwin
 cargo build --release --locked --target x86_64-apple-darwin
 TARGET=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')
