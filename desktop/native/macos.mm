@@ -25,6 +25,7 @@ static NSMutableArray<NSString*> *history;
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(wake:) name:NSWorkspaceDidWakeNotification object:nil];
  sc_start();
  if([NSProcessInfo.processInfo.arguments containsObject:@"--login"])[self login];
+ if([NSProcessInfo.processInfo.arguments containsObject:@"--history"])sc_event(5,"");
 }
 -(void)tick {NSInteger revision=NSPasteboard.generalPasteboard.changeCount;if(revision!=lastChange){lastChange=revision;sc_event(2,"");}}
 -(void)sleep:(NSNotification*)n {[self.timer invalidate];self.timer=nil;}
@@ -49,7 +50,7 @@ static NSMutableArray<NSString*> *history;
 -(void)quit{native_ws_close();[NSApp terminate:nil];}
 @end
 extern "C" int native_run(){@autoreleasepool{NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(bundle&&[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].count>1)return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
-extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];});}
+extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];if([s isEqualToString:@"请登录同一个账号"])[(ClipboardApp*)NSApp.delegate login];});}
 extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{history=[NSMutableArray new];});}
 extern "C" void native_history_item(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{[history addObject:s];});}
 extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{

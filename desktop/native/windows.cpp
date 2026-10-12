@@ -35,7 +35,7 @@ static LRESULT CALLBACK WndProc(HWND window,UINT message,WPARAM w,LPARAM l){
   AppendMenuW(menu,MF_STRING,1,L"登录 / 切换账号");AppendMenuW(menu,MF_STRING,2,L"历史记录");AppendMenuW(menu,MF_STRING,3,L"同步当前剪贴板");AppendMenuW(menu,MF_STRING,4,L"暂停 / 恢复");AppendMenuW(menu,MF_STRING,5,L"退出登录");AppendMenuW(menu,MF_STRING,6,L"退出");POINT point;GetCursorPos(&point);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(menu);
   if(id==1)login();if(id==2)sc_event(5,"");if(id==3)sc_event(2,"");if(id==4)sc_event(7,"");if(id==5)sc_event(8,"");if(id==6)DestroyWindow(window);return 0;
  }
- if(message==WM_APP+2){auto *text=(std::wstring*)l;status=*text;delete text;wcsncpy_s(tray.szTip,(L"共享剪贴板 · "+status).c_str(),_TRUNCATE);tray.uFlags=NIF_TIP;Shell_NotifyIconW(NIM_MODIFY,&tray);return 0;}
+ if(message==WM_APP+2){auto *text=(std::wstring*)l;status=*text;delete text;wcsncpy_s(tray.szTip,(L"共享剪贴板 · "+status).c_str(),_TRUNCATE);tray.uFlags=NIF_TIP;Shell_NotifyIconW(NIM_MODIFY,&tray);if(status==L"请登录同一个账号")login();return 0;}
  if(message==WM_APP+3){rows.clear();return 0;}
  if(message==WM_APP+4){auto *text=(std::wstring*)l;rows.push_back(*text);delete text;return 0;}
  if(message==WM_APP+5){showHistory();return 0;}
