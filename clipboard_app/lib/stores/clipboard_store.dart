@@ -114,12 +114,13 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   /// 提供手动"粘贴并同步"的入口。
   /// 支持文本、图片、图文混合内容。
   Future<void> syncCurrentClipboard() async {
-    if (_manager == null || _platform == null) return;
+    if (_manager == null || _platform == null) throw StateError('尚未登录或初始化未完成');
 
     try {
       final generation = _generation;
       final content = await _platform!.readClipboard();
-      if (content == null || generation != _generation || _disposed) return;
+      if (generation != _generation || _disposed) return;
+      if (content == null) throw StateError('剪贴板为空或不支持该格式');
 
       switch (content.contentType) {
         case 'text':
@@ -141,24 +142,18 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
           break;
       }
     } catch (e) {
-      debugPrint('[ClipboardStore] 同步剪贴板失败: $e');
+      debugPrint('[ClipboardStore] 同步剪贴板失败');
+      rethrow;
     }
   }
 
   /// 添加图片条目
   Future<void> _addImageItem(Uint8List imageBytes) async {
     try {
-      // 生成缩略图
-      final generation = _generation;
-      final preview = await _platform!.generateThumbnail(
-        imageBytes,
-        maxSize: 200,
-      );
-      if (generation != _generation || _disposed) return;
       // 转为 base64
       final base64Content = _platform!.imageBytesToBase64(imageBytes);
 
-      await _manager!.addImageItem(base64Content, preview: preview);
+      await _manager!.addImageItem(base64Content);
     } catch (e) {
       debugPrint('[ClipboardStore] 添加图片失败: $e');
       rethrow;
@@ -168,19 +163,14 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   /// 添加图文混合条目
   Future<void> _addRichItem(String text, Uint8List imageBytes) async {
     try {
-      // 生成缩略图
-      final generation = _generation;
-      final preview = await _platform!.generateThumbnail(
-        imageBytes,
-        maxSize: 200,
-      );
-      if (generation != _generation || _disposed) return;
       // 转为 base64
       final base64Content = _platform!.imageBytesToBase64(imageBytes);
 
-      await _manager!.addImageItem(base64Content, preview: preview);
-      // TODO: 后端 API 需要支持真正的图文混合类型
-      // 目前先作为图片上传，文本内容在 UI 层展示
+      await _manager!.addImageItem(
+        text,
+        imageUrl: base64Content,
+        contentType: 'rich',
+      );
     } catch (e) {
       debugPrint('[ClipboardStore] 添加图文内容失败: $e');
       rethrow;

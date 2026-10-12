@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'models/clipboard_item.dart';
 import 'models/device_info.dart';
@@ -70,10 +71,12 @@ class ClipboardManager {
     await platform.initStorage();
     final localItems = await platform.getAllCachedItems();
     if (_disposed) return;
-    if (localItems.isNotEmpty) {
-      _items = localItems;
+    if (localItems.isNotEmpty && !_suspended) {
+      _items = localItems.map(_metadata).toList();
       if (!_disposed) _itemsController.add(_items);
     }
+
+    _syncSubscription = _syncService.onClipboardSync.listen(_handleRemoteSync);
 
     // 2. 后台增量同步
     syncWithServer().catchError((e) {
@@ -82,14 +85,13 @@ class ClipboardManager {
 
     // 3. 建立实时连接
     if (!_suspended && !_disposed) _syncService.connect();
-
-    // 4. 监听其他设备的同步事件
-    _syncSubscription = _syncService.onClipboardSync.listen(_handleRemoteSync);
   }
 
   void suspend() {
     _suspended = true;
     _syncService.disconnect();
+    _items = [];
+    if (!_disposed) _itemsController.add(_items);
   }
 
   Future<void> resume() async {
@@ -104,14 +106,19 @@ class ClipboardManager {
   /// 对应桌面端 clipboardStore.syncWithServer()
   Future<void> syncWithServer() async {
     if (_disposed || _suspended) return;
-    final result = await _apiClient.sync();
+    final beforeIds = _items.map((i) => i.id).toSet();
+    final snapshot = await _apiClient.getHistory(limit: 50, metadataOnly: true);
     if (_disposed || _suspended) return;
-    final decrypted = await _decryptItems(result.items);
+    final decrypted = await _decryptItems(snapshot);
     if (_disposed || _suspended) return;
+    final additions = _items.where(
+      (i) => !beforeIds.contains(i.id) && !decrypted.any((d) => d.id == i.id),
+    );
+    decrypted.insertAll(0, additions);
     await platform.replaceAllCached(decrypted);
     if (_disposed || _suspended) return;
     _items = decrypted;
-    await platform.setLastSyncTime(result.syncedAt);
+    await platform.setLastSyncTime(DateTime.now().toUtc().toIso8601String());
     if (!_disposed) _itemsController.add(_items);
   }
 
@@ -120,10 +127,18 @@ class ClipboardManager {
   /// 对应桌面端 clipboardStore.addItem()
   Future<void> addTextItem(String content) async {
     if (_disposed || _suspended) return;
-    if (content.isEmpty || content.length > config.maxContentLength) return;
+    if (content.isEmpty) {
+      throw StateError('内容为空');
+    }
+    if (utf8.encode(content).length > config.maxContentLength) {
+      throw StateError('文本超过 100KB');
+    }
 
     // 去重：与最近一条相同则跳过
-    if (_items.isNotEmpty && _items.first.content == content) return;
+    if (_items.isNotEmpty &&
+        _items.first.contentType == 'text' &&
+        _items.first.content == content &&
+        !_items.first.metadataOnly) { return; }
 
     String sendContent = content;
     bool encrypted = false;
@@ -131,13 +146,9 @@ class ClipboardManager {
 
     // 端到端加密
     if (_cryptoService.hasKey) {
-      try {
-        sendContent = _cryptoService.encryptText(content);
-        contentHash = ClipboardCryptoService.generateContentHash(content);
-        encrypted = true;
-      } catch (_) {
-        // 加密失败回退明文
-      }
+      sendContent = _cryptoService.encryptText(content);
+      contentHash = ClipboardCryptoService.generateContentHash(content);
+      encrypted = true;
     }
 
     final serverItem = await _apiClient.addItem(
@@ -153,14 +164,14 @@ class ClipboardManager {
     // 本地用明文显示
     final localItem = serverItem.copyWith(content: content, encrypted: false);
 
-    _items.insert(0, localItem);
+    _items.insert(0, _metadata(localItem));
     if (_items.length > config.maxHistoryCount) {
       _items = _items.sublist(0, config.maxHistoryCount);
     }
     if (!_disposed) _itemsController.add(_items);
 
     // 缓存到本地
-    await platform.upsertItems([localItem]);
+    await platform.upsertItems([_metadata(localItem)]);
 
     // 广播加密数据给其他设备
     _syncService.broadcastClipboardItem(serverItem);
@@ -175,6 +186,7 @@ class ClipboardManager {
     String imageContent, {
     String? preview,
     String? imageUrl,
+    String contentType = 'image',
   }) async {
     if (_disposed || _suspended) return;
     String sendContent = imageContent;
@@ -183,23 +195,24 @@ class ClipboardManager {
     String? contentHash;
 
     if (_cryptoService.hasKey) {
-      try {
-        sendContent = _cryptoService.encryptText(imageContent);
-        if (preview != null) {
-          sendPreview = _cryptoService.encryptText(preview);
-        }
-        contentHash = ClipboardCryptoService.generateContentHash(imageContent);
-        encrypted = true;
-      } catch (_) {}
+      sendContent = _cryptoService.encryptText(imageContent);
+      if (preview != null) {
+        sendPreview = _cryptoService.encryptText(preview);
+      }
+      contentHash = ClipboardCryptoService.generateContentHash(imageContent);
+      encrypted = true;
     }
+    final sendImageUrl = imageUrl != null && encrypted
+        ? _cryptoService.encryptText(imageUrl)
+        : imageUrl;
 
     final serverItem = await _apiClient.addItem(
       content: sendContent,
-      contentType: 'image',
+      contentType: contentType,
       deviceId: _deviceInfo.deviceId,
       deviceName: _deviceInfo.deviceName,
       preview: sendPreview,
-      imageUrl: imageUrl,
+      imageUrl: sendImageUrl,
       encrypted: encrypted,
       contentHash: contentHash,
     );
@@ -208,15 +221,16 @@ class ClipboardManager {
     final localItem = serverItem.copyWith(
       content: imageContent,
       preview: preview,
+      imageUrl: imageUrl,
       encrypted: false,
     );
 
-    _items.insert(0, localItem);
+    _items.insert(0, _metadata(localItem));
     if (_items.length > config.maxHistoryCount) {
       _items = _items.sublist(0, config.maxHistoryCount);
     }
     if (!_disposed) _itemsController.add(_items);
-    await platform.upsertItems([localItem]);
+    await platform.upsertItems([_metadata(localItem)]);
     _syncService.broadcastClipboardItem(serverItem);
   }
 
@@ -244,11 +258,30 @@ class ClipboardManager {
   ///
   /// 对应桌面端 clipboardStore.copyToClipboard()
   Future<void> copyToClipboard(ClipboardItem item) async {
-    if (_disposed || item.encrypted) return;
+    if (_disposed) return;
+    if (item.metadataOnly) {
+      item = await _decryptItem(await _apiClient.getItem(item.id));
+    }
+    if (_disposed || _suspended) return;
+    if (item.encrypted) throw StateError('请先解锁加密剪贴板');
+    if (item.contentType == 'rich' &&
+        item.imageUrl?.startsWith('data:image/') == true) {
+      await platform.writeClipboardRich(
+        item.content,
+        base64Decode(item.imageUrl!.split(',').last),
+      );
+      return;
+    }
     if (item.contentType == 'text' || item.contentType == 'rich') {
       await platform.writeClipboardText(item.content);
     }
-    // 图片类型暂不自动写入剪贴板（移动端限制）
+    if (item.contentType == 'image') {
+      if (!item.content.startsWith('data:image/')) {
+        throw StateError('旧版图片链接请在原设备打开');
+      }
+      final bytes = base64Decode(item.content.split(',').last);
+      await platform.writeClipboardImage(bytes);
+    }
   }
 
   /// 设置加密密钥
@@ -271,12 +304,12 @@ class ClipboardManager {
     final item = await _decryptItem(rawItem);
     if (_disposed || _suspended) return;
 
-    _items.insert(0, item);
+    _items.insert(0, _metadata(item));
     if (_items.length > config.maxHistoryCount) {
       _items = _items.sublist(0, config.maxHistoryCount);
     }
     if (!_disposed) _itemsController.add(_items);
-    await platform.upsertItems([item]);
+    await platform.upsertItems([_metadata(item)]);
 
     // 来自其他设备的文本自动写入剪贴板
     if (item.deviceId != _deviceInfo.deviceId &&
@@ -290,6 +323,11 @@ class ClipboardManager {
 
   /// 解密单条记录
   Future<ClipboardItem> _decryptItem(ClipboardItem item) async {
+    if (item.metadataOnly) {
+      return item.copyWith(
+        content: item.encrypted ? '[加密记录 · 点按复制]' : item.content,
+      );
+    }
     if (!item.encrypted) return item;
     if (!_cryptoService.hasKey) {
       return item.copyWith(
@@ -303,9 +341,17 @@ class ClipboardManager {
       final preview = item.preview != null
           ? _cryptoService.decryptText(item.preview!)
           : null;
+      final imageUrl = item.imageUrl;
+      final decryptedImage =
+          imageUrl != null &&
+              !imageUrl.startsWith('data:') &&
+              !imageUrl.startsWith('https://')
+          ? _cryptoService.decryptText(imageUrl)
+          : imageUrl;
       return item.copyWith(
         content: content,
         preview: preview,
+        imageUrl: decryptedImage,
         encrypted: false,
       );
     } catch (_) {
@@ -315,6 +361,21 @@ class ClipboardManager {
       );
     }
   }
+
+  ClipboardItem _metadata(ClipboardItem item) => ClipboardItem(
+    id: item.id,
+    content: item.encrypted
+        ? '[加密记录 · 点按复制]'
+        : item.contentType == 'image'
+        ? ''
+        : String.fromCharCodes(item.content.runes.take(240)),
+    contentType: item.contentType,
+    deviceId: item.deviceId,
+    deviceName: item.deviceName,
+    createdAt: item.createdAt,
+    encrypted: item.encrypted,
+    metadataOnly: true,
+  );
 
   /// 批量解密
   Future<List<ClipboardItem>> _decryptItems(List<ClipboardItem> items) async {

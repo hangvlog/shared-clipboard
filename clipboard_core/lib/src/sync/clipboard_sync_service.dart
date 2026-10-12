@@ -123,7 +123,7 @@ class ClipboardSyncService {
   /// 对应桌面端 socketService.emit('clipboard_sync', { item })
   void broadcastClipboardItem(ClipboardItem item) {
     if (_socket?.connected != true) return;
-    _socket!.emit('clipboard_sync', {'item': item.toJson()});
+    _socket!.emit('clipboard_sync', {'item': {'id': item.id}});
   }
 
   /// 断开连接
@@ -134,7 +134,9 @@ class ClipboardSyncService {
   }
 
   void _updateState(SyncConnectionState state) {
-    if (_connectionStateController.isClosed || state == _connectionState) { return; }
+    if (_connectionStateController.isClosed || state == _connectionState) {
+      return;
+    }
     _connectionState = state;
     _connectionStateController.add(state);
   }

@@ -36,11 +36,7 @@ class ClipboardItemTile extends StatelessWidget {
               Row(
                 children: [
                   // 设备图标
-                  Icon(
-                    _getDeviceIcon(),
-                    size: 14,
-                    color: colorScheme.outline,
-                  ),
+                  Icon(_getDeviceIcon(), size: 14, color: colorScheme.outline),
                   const SizedBox(width: 4),
                   Text(
                     item.deviceName,
@@ -50,11 +46,7 @@ class ClipboardItemTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   // 时间
-                  Icon(
-                    Icons.access_time,
-                    size: 14,
-                    color: colorScheme.outline,
-                  ),
+                  Icon(Icons.access_time, size: 14, color: colorScheme.outline),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -90,6 +82,9 @@ class ClipboardItemTile extends StatelessWidget {
   }
 
   Widget _buildContent(BuildContext context) {
+    if (item.metadataOnly && item.contentType == "image") {
+      return const Text("图片 · 点按下载并复制");
+    }
     switch (item.contentType) {
       case 'image':
         return _buildImageContent(context);
@@ -119,11 +114,7 @@ class ClipboardItemTile extends StatelessWidget {
           child: SizedBox(
             height: 120,
             width: double.infinity,
-            child: Image.memory(
-              bytes,
-              fit: BoxFit.cover,
-              cacheWidth: 400,
-            ),
+            child: Image.memory(bytes, fit: BoxFit.cover, cacheWidth: 400),
           ),
         );
       } catch (_) {}
@@ -137,7 +128,7 @@ class ClipboardItemTile extends StatelessWidget {
         child: Image.network(
           imageData,
           fit: BoxFit.cover,
-              cacheWidth: 400,
+          cacheWidth: 400,
           errorBuilder: (_, _, _) => _buildImagePlaceholder(context),
         ),
       );
@@ -160,10 +151,7 @@ class ClipboardItemTile extends StatelessWidget {
         // 图片部分（如有预览）
         if (item.imageUrl != null || item.preview != null) ...[
           const SizedBox(height: 8),
-          SizedBox(
-            height: 80,
-            child: _buildThumbnail(context),
-          ),
+          SizedBox(height: 80, child: _buildThumbnail(context)),
         ],
       ],
     );
@@ -181,7 +169,7 @@ class ClipboardItemTile extends StatelessWidget {
       return Image.network(
         source,
         fit: BoxFit.cover,
-              cacheWidth: 400,
+        cacheWidth: 400,
         errorBuilder: (_, _, _) => _buildImagePlaceholder(context),
       );
     }
@@ -228,6 +216,7 @@ class ClipboardItemTile extends StatelessWidget {
   }
 
   IconData _getDeviceIcon() {
+    if (item.deviceName.toLowerCase().contains('ipad')) return Icons.tablet_mac;
     if (item.deviceName.toLowerCase().contains('iphone') ||
         item.deviceName.toLowerCase().contains('android') ||
         item.deviceName.toLowerCase().contains('mobile')) {

@@ -74,7 +74,12 @@ class ClipboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: _buildBody(context, store),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: _buildBody(context, store),
+        ),
+      ),
       // 悬浮按钮：同步当前剪贴板
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _syncClipboard(context, store),
@@ -140,7 +145,16 @@ class ClipboardScreen extends StatelessWidget {
     BuildContext context,
     ClipboardStore store,
   ) async {
-    await store.syncCurrentClipboard();
+    try {
+      await store.syncCurrentClipboard();
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+      return;
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -156,7 +170,16 @@ class ClipboardScreen extends StatelessWidget {
     ClipboardStore store,
     ClipboardItem item,
   ) async {
-    await store.copyItem(item);
+    try {
+      await store.copyItem(item);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+      return;
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -180,7 +203,7 @@ class ClipboardScreen extends StatelessWidget {
         content: TextField(
           onChanged: (value) => input = value,
           obscureText: true,
-          decoration: const InputDecoration(labelText: '与电脑端相同的云盘加密密码'),
+          decoration: const InputDecoration(labelText: '各设备相同的剪贴板加密密码'),
         ),
         actions: [
           TextButton(

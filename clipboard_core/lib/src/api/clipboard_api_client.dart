@@ -24,36 +24,62 @@ class ClipboardApiClient {
   final ClipboardConfig config;
   final http.Client _client;
 
-  ClipboardApiClient({
-    required this.config,
-    http.Client? client,
-  }) : _client = client ?? http.Client();
+  ClipboardApiClient({required this.config, http.Client? client})
+    : _client = client ?? http.Client();
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        if (config.token != null) 'Authorization': 'Bearer ${config.token}',
-      };
+    'Content-Type': 'application/json',
+    if (config.token != null) 'Authorization': 'Bearer ${config.token}',
+  };
 
   /// GET /clipboard/history - 获取剪贴板历史记录
   ///
   /// [limit] 最大返回条数，默认 200
   /// [days] 按天数筛选（可选）
-  Future<List<ClipboardItem>> getHistory({int limit = 200, int? days}) async {
-    final params = <String, String>{'limit': limit.toString()};
+  Future<List<ClipboardItem>> getHistory({
+    int limit = 200,
+    int? days,
+    bool metadataOnly = false,
+  }) async {
+    final params = <String, String>{
+      'limit': limit.toString(),
+      'metadata_only': metadataOnly.toString(),
+    };
     if (days != null) params['days'] = days.toString();
 
-    final uri = Uri.parse('${config.apiBaseUrl}/clipboard/history')
-        .replace(queryParameters: params);
+    final uri = Uri.parse(
+      '${config.apiBaseUrl}/clipboard/history',
+    ).replace(queryParameters: params);
 
-    final response = await _client.get(uri, headers: _headers);
+    final response = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 20));
     final body = jsonDecode(response.body) as Map<String, dynamic>;
 
     if (body['code'] == 1 || body['code'] == 200) {
       final list = body['data'] as List;
-      return list.map((e) => ClipboardItem.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => ClipboardItem.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
 
     throw ApiException(body['message'] as String? ?? '获取历史记录失败');
+  }
+
+  Future<ClipboardItem> getItem(String id) async {
+    final response = await _client
+        .get(
+          Uri.parse(
+            '${config.apiBaseUrl}/clipboard/item/${Uri.encodeComponent(id)}',
+          ),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (body['code'] == 1 || body['code'] == 200) {
+      return ClipboardItem.fromJson(body['data'] as Map<String, dynamic>);
+    }
+    throw ApiException('读取内容失败');
   }
 
   /// POST /clipboard/add - 添加剪贴板记录
@@ -102,10 +128,13 @@ class ClipboardApiClient {
     final params = <String, String>{};
     if (since != null) params['since'] = since;
 
-    final uri = Uri.parse('${config.apiBaseUrl}/clipboard/sync')
-        .replace(queryParameters: params.isNotEmpty ? params : null);
+    final uri = Uri.parse(
+      '${config.apiBaseUrl}/clipboard/sync',
+    ).replace(queryParameters: params.isNotEmpty ? params : null);
 
-    final response = await _client.get(uri, headers: _headers);
+    final response = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 20));
     final body = jsonDecode(response.body) as Map<String, dynamic>;
 
     if (body['code'] == 1 || body['code'] == 200) {

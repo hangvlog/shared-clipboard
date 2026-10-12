@@ -41,6 +41,9 @@ abstract class PlatformAdapter {
   /// 将图片写入系统剪贴板
   Future<void> writeClipboardImage(Uint8List imageBytes);
 
+  Future<void> writeClipboardRich(String text, Uint8List imageBytes) =>
+      throw UnsupportedError("当前平台尚不支持图文一起复制");
+
   // ============================================
   // 本地持久化存储
   // ============================================

@@ -19,7 +19,7 @@ import 'package:crypto/crypto.dart' as hash_lib;
 /// - SQLite 本地缓存（sqflite）
 /// - 设备信息获取（device_info_plus）
 /// - 图片缩略图生成（image 库）
-class FlutterPlatformAdapter implements PlatformAdapter {
+class FlutterPlatformAdapter extends PlatformAdapter {
   FlutterPlatformAdapter({required this.accountId});
   final String accountId;
   Database? _db;
@@ -49,7 +49,9 @@ class FlutterPlatformAdapter implements PlatformAdapter {
           final loaded = Completer<Uint8List?>();
           final progress = item.getFile(format, (file) async {
             try {
-              loaded.complete(await file.readAll());
+              final data = await file.readAll();
+              if (data.length > 2 * 1024 * 1024) throw StateError('图片超过 2 MiB');
+              loaded.complete(data);
             } catch (error) {
               loaded.completeError(error);
             }
@@ -64,7 +66,7 @@ class FlutterPlatformAdapter implements PlatformAdapter {
             contentType: text != null && text.isNotEmpty ? 'rich' : 'image',
             text: text,
             imageBytes: imageData,
-            hash: _quickHashBytes(imageData),
+            hash: _quickHash('${text ?? ''}:${_quickHashBytes(imageData)}'),
           );
         }
       }
@@ -85,25 +87,39 @@ class FlutterPlatformAdapter implements PlatformAdapter {
       }
 
       return null;
-    } catch (_) {
-      return null;
+    } catch (error) {
+      throw StateError('读取剪贴板失败：$error');
     }
   }
 
   @override
   Future<void> writeClipboardText(String text) async {
-    try {
-      final item = DataWriterItem();
-      item.add(Formats.plainText(text));
-      await SystemClipboard.instance?.write([item]);
-    } catch (_) {
-      // 静默处理（移动端可能因权限限制失败）
-    }
+    final clipboard = SystemClipboard.instance;
+    if (clipboard == null) throw StateError('当前设备剪贴板不可用');
+    final item = DataWriterItem();
+    item.add(Formats.plainText(text));
+    await clipboard.write([item]);
   }
 
   @override
-  Future<void> writeClipboardImage(Uint8List imageBytes) async {
-    // 移动端图片写入剪贴板限制较多，暂不实现
+  Future<void> writeClipboardImage(Uint8List imageBytes) =>
+      writeClipboardRich('', imageBytes);
+
+  @override
+  Future<void> writeClipboardRich(String text, Uint8List imageBytes) async {
+    if (imageBytes.length > 2 * 1024 * 1024) throw StateError('图片超过 2 MiB');
+    final clipboard = SystemClipboard.instance;
+    if (clipboard == null) throw StateError('当前设备剪贴板不可用');
+    final item = DataWriterItem();
+    if (text.isNotEmpty) item.add(Formats.plainText(text));
+    final jpeg =
+        imageBytes.length > 2 && imageBytes[0] == 0xff && imageBytes[1] == 0xd8;
+    if (jpeg) {
+      item.add(Formats.jpeg(imageBytes));
+    } else {
+      item.add(Formats.png(imageBytes));
+    }
+    await clipboard.write([item]);
   }
 
   // ============================================
@@ -119,7 +135,14 @@ class FlutterPlatformAdapter implements PlatformAdapter {
 
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE clipboard_cache ADD COLUMN metadata_only INTEGER DEFAULT 0",
+          );
+        }
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS clipboard_cache (
@@ -131,7 +154,8 @@ class FlutterPlatformAdapter implements PlatformAdapter {
             created_at TEXT NOT NULL,
             preview TEXT,
             image_url TEXT,
-            encrypted INTEGER DEFAULT 0
+            encrypted INTEGER DEFAULT 0,
+            metadata_only INTEGER DEFAULT 0
           )
         ''');
       },
@@ -251,7 +275,9 @@ class FlutterPlatformAdapter implements PlatformAdapter {
       _deviceName = '${info.brand} ${info.model}';
     } else if (Platform.isIOS) {
       final info = await deviceInfoPlugin.iosInfo;
-      _deviceName = info.utsname.machine;
+      _deviceName = info.model.toLowerCase().contains('ipad')
+          ? 'iPad (${info.utsname.machine})'
+          : 'iPhone (${info.utsname.machine})';
     }
   }
 
@@ -280,7 +306,9 @@ class FlutterPlatformAdapter implements PlatformAdapter {
 
   @override
   String imageBytesToBase64(Uint8List imageBytes) {
-    return 'data:image/png;base64,${base64Encode(imageBytes)}';
+    final jpeg =
+        imageBytes.length > 2 && imageBytes[0] == 0xff && imageBytes[1] == 0xd8;
+    return 'data:image/${jpeg ? 'jpeg' : 'png'};base64,${base64Encode(imageBytes)}';
   }
 
   // ============================================

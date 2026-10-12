@@ -6,3 +6,5 @@
 **/ephemeral/
 
 flutter_*.log
+/desktop/target/
+/desktop/out/

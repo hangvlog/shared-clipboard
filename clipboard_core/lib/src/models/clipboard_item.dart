@@ -27,6 +27,7 @@ class ClipboardItem {
 
   /// 是否已加密
   final bool encrypted;
+  final bool metadataOnly;
 
   ClipboardItem({
     required this.id,
@@ -38,6 +39,7 @@ class ClipboardItem {
     this.preview,
     this.imageUrl,
     this.encrypted = false,
+    this.metadataOnly = false,
   });
 
   /// 从后端 JSON 响应构造
@@ -52,6 +54,7 @@ class ClipboardItem {
       preview: json['preview'] as String?,
       imageUrl: json['imageUrl'] as String?,
       encrypted: json['encrypted'] as bool? ?? false,
+      metadataOnly: json['metadataOnly'] as bool? ?? false,
     );
   }
 
@@ -67,6 +70,7 @@ class ClipboardItem {
       'preview': preview,
       'imageUrl': imageUrl,
       'encrypted': encrypted,
+      'metadataOnly': metadataOnly,
     };
   }
 
@@ -81,6 +85,7 @@ class ClipboardItem {
     String? preview,
     String? imageUrl,
     bool? encrypted,
+    bool? metadataOnly,
   }) {
     return ClipboardItem(
       id: id ?? this.id,
@@ -92,6 +97,7 @@ class ClipboardItem {
       preview: preview ?? this.preview,
       imageUrl: imageUrl ?? this.imageUrl,
       encrypted: encrypted ?? this.encrypted,
+      metadataOnly: metadataOnly ?? this.metadataOnly,
     );
   }
 
@@ -107,6 +113,7 @@ class ClipboardItem {
       'preview': preview,
       'image_url': imageUrl,
       'encrypted': encrypted ? 1 : 0,
+      'metadata_only': metadataOnly ? 1 : 0,
     };
   }
 
@@ -122,11 +129,13 @@ class ClipboardItem {
       preview: map['preview'] as String?,
       imageUrl: map['image_url'] as String?,
       encrypted: (map['encrypted'] as int?) == 1,
+      metadataOnly: (map['metadata_only'] as int?) == 1,
     );
   }
 
   @override
-  String toString() => 'ClipboardItem(id: $id, type: $contentType, device: $deviceName)';
+  String toString() =>
+      'ClipboardItem(id: $id, type: $contentType, device: $deviceName)';
 
   @override
   bool operator ==(Object other) => other is ClipboardItem && other.id == id;
