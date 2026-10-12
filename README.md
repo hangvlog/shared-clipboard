@@ -25,6 +25,8 @@
 
 ## 构建
 
+后续安装包在本机 macOS / SSH 受控 Windows 从已推送的准确提交构建；本产品 Windows 使用用户指定的家庭 HANG（`ssh-windows-control --device hang`）。GitHub Actions 只保留静态分析和测试，不在标签或 Release 事件自动编译安装包。Android 构建前检查本机或受控 Windows 的既有 Flutter / Android 工具链；iOS 真机分发还需要 Apple Developer 团队与 provisioning。
+
 ```sh
 cd desktop
 cargo test --locked
@@ -47,3 +49,5 @@ flutter build ios --release --no-codesign --dart-define=ENV=production
 ## 发布状态
 
 1.1.0 为原生桌面首个预览版。Android 沿用项目现有 debug 签名，仅供测试；iOS/iPadOS 未配置 Apple Developer 签名，CI 无签名编译成功也不等于有可安装 IPA。macOS 包采用本地 ad-hoc 签名，尚未 Apple 公证；Windows 包尚未代码签名。实际构建与验收记录见 chat-all `docs/front/shared-clipboard-native-1.1.0.md`。
+
+本次已启动并完成的 Android/iOS 云端作业保留其固定源码及产物来源，不重复编译；后续构建按上述本机/受控设备规则执行。
