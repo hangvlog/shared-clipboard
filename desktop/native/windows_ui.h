@@ -10,6 +10,7 @@ extern std::vector<std::wstring> rows;
 std::wstring wide(const char* text);
 void create(HWND window);
 void layout(HWND window);
+void theme(HWND window);
 void paint(HWND window);
 void render(HWND window,HDC dc);
 void draw(const DRAWITEMSTRUCT* item);

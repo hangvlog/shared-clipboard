@@ -51,6 +51,7 @@ static void menu(){
 static LRESULT CALLBACK WndProc(HWND window,UINT message,WPARAM w,LPARAM l){
  if(message==showMessage&&showMessage){showMain();return 0;}
  if(message==WM_CREATE){ui::create(window);return 0;}
+ if(message==WM_SETTINGCHANGE||message==WM_THEMECHANGED||message==WM_DWMCOMPOSITIONCHANGED){ui::theme(window);return 0;}
  if(message==WM_SIZE){ui::layout(window);return 0;}
  if(message==WM_GETMINMAXINFO){auto p=(MINMAXINFO*)l;p->ptMinTrackSize={820,540};return 0;}
  if(message==WM_PRINTCLIENT){ui::render(window,(HDC)w);return 0;}
