@@ -17,8 +17,8 @@ if (!signingPath.isNullOrBlank()) {
 android {
     namespace = "com.chatall.clipboard.clipboard_app"
     compileSdk = flutter.compileSdkVersion
-    // Validated existing controlled-host toolchain; no additional NDK download.
-    ndkVersion = "27.1.12297006"
+    // Locked JNI dependencies require r28c; use the highest compatible NDK.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -31,8 +31,8 @@ android {
 
     defaultConfig {
         applicationId = "com.chatall.clipboard.clipboard_app"
-        // super_clipboard 需要 minSdk 21
-        minSdk = 21
+        // Keep the supported Android baseline aligned with the pinned Flutter SDK.
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
