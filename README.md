@@ -74,3 +74,5 @@ flutter build ios --release --no-codesign --dart-define=ENV=production
 启动或再次点击程序即显示主页面；左键点托盘图标可唤回，右键提供账号、暂停和退出操作。最近 50 条记录按需载入，选中后查看全文或图片；点击“复制内容”或双击记录复制，不关闭页面。新同步内容到达时刷新列表并保持所选记录。无记录/未登录时显示操作提示；关闭窗口释放预览和历史，保留托盘同步。
 
 Android 1.1.2 构建工具链固定为 Flutter 3.41.7 / Dart 3.11.5、JDK 17 与 NDK 28.2.13676358（锁定的 JNI 依赖要求）；使用官方构建入口和已锁定 pub 依赖。
+
+剪贴板原生依赖使用其已锁定包内 Cargokit 配置验证的签名预编译库（按源码哈希匹配）；配置在 `clipboard_app/cargokit_options.yaml`，不要求构建机再安装滚动 stable Rust。APK 本身仍在受控 Windows 本地编译与签名发布。
