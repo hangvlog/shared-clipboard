@@ -38,7 +38,7 @@ static NSView *card(NSView *child){
  NSStackView *header=stack(@[heading,buttons],NSUserInterfaceLayoutOrientationHorizontal,24);header.alignment=NSLayoutAttributeCenterY;header.distribution=NSStackViewDistributionFill;
  [buttons setHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
  self.table=[NSTableView new];NSTableColumn *column=[[NSTableColumn alloc]initWithIdentifier:@"history"];[self.table addTableColumn:column];self.table.headerView=nil;self.table.rowHeight=76;self.table.intercellSpacing=NSMakeSize(0,6);self.table.delegate=self;self.table.dataSource=self;self.table.target=self;self.table.doubleAction=@selector(duplicate);self.table.backgroundColor=NSColor.clearColor;
- if(@available(macOS 11.0,*))self.table.style=NSTableViewStyleSourceList;
+ if([self.table respondsToSelector:@selector(setStyle:)])self.table.style=NSTableViewStyleSourceList;
  NSScrollView *history=[NSScrollView new];history.documentView=self.table;history.hasVerticalScroller=YES;history.drawsBackground=NO;
  self.countLabel=label(@"最近记录 · 0",13,NSFontWeightSemibold);
  NSStackView *historyStack=stack(@[self.countLabel,history],NSUserInterfaceLayoutOrientationVertical,14);[history.widthAnchor constraintEqualToAnchor:historyStack.widthAnchor].active=YES;
