@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <objidl.h>
 #include <gdiplus.h>
 namespace style {
 struct Palette { COLORREF background, surface, text, muted, border, accent, selected, selectedText, buttonText; };
