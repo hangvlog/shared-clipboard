@@ -12,6 +12,7 @@
 @property NSMutableArray<NSString*> *labels;
 @property NSString *selectedId;
 @property BOOL loading;
+@property NSString *connectionState;
 @end
 static NSTextField *label(NSString *value,CGFloat size,NSFontWeight weight){
  NSTextField *view=[NSTextField labelWithString:value];view.font=[NSFont systemFontOfSize:size weight:weight];view.lineBreakMode=NSLineBreakByTruncatingTail;return view;
@@ -64,15 +65,15 @@ static NSView *card(NSView *child){
 -(void)account{[NSApp.delegate performSelector:@selector(login)];}
 -(void)unlock{[NSApp.delegate performSelector:@selector(unlock)];}
 -(void)sync{if(self.loggedIn)sc_event(2,"");else [self account];}
--(void)refresh{if(self.loggedIn){[self status:@"正在读取历史记录…"];sc_event(5,"");}else [self status:@"请先登录，同一账号的记录会显示在这里"];}
+-(void)refresh{if(self.loggedIn){self.statusLabel.stringValue=@"正在读取历史记录…";sc_event(5,"");}else [self status:@"请先登录，同一账号的记录会显示在这里"];}
 -(void)duplicate{NSInteger i=self.table.selectedRow;if(self.duplicateButton.enabled&&i>=0&&i<(NSInteger)self.ids.count)sc_event(6,self.ids[i].UTF8String);}
 -(void)open{[NSApp activateIgnoringOtherApps:YES];[self.window makeKeyAndOrderFront:nil];sc_event(13,"1");[self refresh];}
 -(BOOL)windowShouldClose:(NSWindow*)window{[window orderOut:nil];sc_event(13,"0");sc_event(9,"");[self clear];return NO;}
--(void)status:(NSString*)value{self.statusLabel.stringValue=value;}
+-(void)status:(NSString*)value{self.connectionState=value;self.statusLabel.stringValue=value;}
 -(void)beginHistory{NSInteger i=self.table.selectedRow;self.selectedId=i>=0&&i<(NSInteger)self.ids.count?self.ids[i]:@"";self.loading=YES;[self.ids removeAllObjects];[self.labels removeAllObjects];self.duplicateButton.enabled=NO;}
 -(void)addId:(NSString*)identifier label:(NSString*)value{if(self.window.visible){[self.ids addObject:identifier];[self.labels addObject:value];}}
 -(void)endHistory{
- [self status:self.loggedIn?@"同账号历史 · 自动同步":@"请先登录"];
+ self.statusLabel.stringValue=self.connectionState?:@"历史已更新";
  self.loading=NO;[self.table reloadData];self.countLabel.stringValue=[NSString stringWithFormat:@"最近记录 · %lu",(unsigned long)self.ids.count];
  if(!self.ids.count){self.text.string=@"暂无记录。登录同一账号后，在任一设备复制内容。";self.image.image=nil;self.image.hidden=YES;return;}
  NSUInteger row=[self.ids indexOfObject:self.selectedId];if(row==NSNotFound)row=0;[self.table selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];[self tableViewSelectionDidChange:[NSNotification notificationWithName:NSTableViewSelectionDidChangeNotification object:self.table]];
