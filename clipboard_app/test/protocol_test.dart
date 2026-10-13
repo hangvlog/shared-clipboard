@@ -44,74 +44,79 @@ class MemoryPlatform extends PlatformAdapter {
 }
 
 void main() {
-  test(
-    'Unlocked encrypted history shows readable text without copying or plaintext disk cache',
-    () async {
-      final crypto = ClipboardCryptoService();
-      await crypto.deriveKeyFromUsername('密码+fixture %', 'fixture-user');
-      final raw = ClipboardItem(
-        id: 'one',
-        content: crypto.encryptText('同账号可见'),
-        contentType: 'text',
-        deviceId: 'other-device',
-        deviceName: 'Mac',
-        createdAt: '2026-10-12T12:00:00Z',
-        encrypted: true,
-      );
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      server.listen((request) async {
-        request.response.headers.contentType = ContentType.json;
-        expect(request.headers.value('authorization'), 'Bearer synthetic');
-        final dynamic data = request.uri.path.endsWith('/encryption-salt')
-            ? {
-                'password': base64Encode(
-                  utf8.encode(Uri.encodeComponent('密码+fixture %')),
-                ),
-              }
-            : request.uri.path.endsWith('/history')
-            ? [raw.copyWith(content: '', metadataOnly: true).toJson()]
-            : raw.toJson();
-        request.response.write(jsonEncode({'code': 200, 'data': data}));
-        await request.response.close();
-      });
-      final platform = MemoryPlatform();
-      final base = 'http://127.0.0.1:${server.port}';
-      final manager = ClipboardManager(
-        config: ClipboardConfig(
-          apiBaseUrl: base,
-          wsBaseUrl: base,
-          token: 'synthetic',
-        ),
-        platform: platform,
-        accountUsername: 'fixture-user',
-        autoCopyRemote: false,
-      );
-      try {
-        await manager.restoreAccountEncryption();
-        await manager.syncWithServer();
-        expect(manager.items.single.content, '同账号可见');
-        expect(platform.cached.single.content, isNot(contains('同账号可见')));
-        expect(platform.copied, isNull);
-        final full = await manager.readItem(manager.items.single);
-        expect(full.content, '同账号可见');
-        expect(full.metadataOnly, isFalse);
-        await manager.copyToClipboard(manager.items.single);
-        expect(platform.copied, '同账号可见');
-        await manager.setEncryptionKey('wrong-password', 'fixture-user');
-        expect(manager.items.single.encrypted, isTrue);
-        await expectLater(
-          manager.copyToClipboard(manager.items.single),
-          throwsStateError,
+  for (final useDefault in [false, true]) {
+    test(
+      'Unlocked history is readable (default=$useDefault) without copying or plaintext disk cache',
+      () async {
+        final crypto = ClipboardCryptoService();
+        await crypto.deriveKeyFromUsername(
+          useDefault ? '123456789' : '密码+fixture %',
+          'fixture-user',
         );
-        expect(platform.copied, '同账号可见');
-        manager.suspend();
-        expect(manager.items, isEmpty);
-      } finally {
-        manager.dispose();
-        await server.close(force: true);
-      }
-    },
-  );
+        final raw = ClipboardItem(
+          id: 'one',
+          content: crypto.encryptText('同账号可见'),
+          contentType: 'text',
+          deviceId: 'other-device',
+          deviceName: 'Mac',
+          createdAt: '2026-10-12T12:00:00Z',
+          encrypted: true,
+        );
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((request) async {
+          request.response.headers.contentType = ContentType.json;
+          expect(request.headers.value('authorization'), 'Bearer synthetic');
+          final dynamic data = request.uri.path.endsWith('/encryption-salt')
+              ? {
+                  'password': useDefault
+                      ? null
+                      : base64Encode(
+                          utf8.encode(Uri.encodeComponent('密码+fixture %')),
+                        ),
+                }
+              : request.uri.path.endsWith('/history')
+              ? [raw.copyWith(content: '', metadataOnly: true).toJson()]
+              : raw.toJson();
+          request.response.write(jsonEncode({'code': 200, 'data': data}));
+          await request.response.close();
+        });
+        final platform = MemoryPlatform();
+        final base = 'http://127.0.0.1:${server.port}';
+        final manager = ClipboardManager(
+          config: ClipboardConfig(
+            apiBaseUrl: base,
+            wsBaseUrl: base,
+            token: 'synthetic',
+          ),
+          platform: platform,
+          accountUsername: 'fixture-user',
+          autoCopyRemote: false,
+        );
+        try {
+          await manager.restoreAccountEncryption();
+          await manager.syncWithServer();
+          expect(manager.items.single.content, '同账号可见');
+          expect(platform.cached.single.content, isNot(contains('同账号可见')));
+          expect(platform.copied, isNull);
+          final full = await manager.readItem(manager.items.single);
+          expect(full.content, '同账号可见');
+          expect(full.metadataOnly, isFalse);
+          await manager.copyToClipboard(manager.items.single);
+          expect(platform.copied, '同账号可见');
+          await manager.setEncryptionKey('wrong-password', 'fixture-user');
+          // Adding another old password must not lock previously readable records.
+          expect(manager.items.single.encrypted, isFalse);
+          await manager.copyToClipboard(manager.items.single);
+          expect(platform.copied, '同账号可见');
+          manager.suspend();
+          expect(manager.items, isEmpty);
+        } finally {
+          manager.dispose();
+          await server.close(force: true);
+        }
+      },
+    );
+  }
   test(
     'Android resume sync is deduplicated, paused in background and does not echo cloud writes',
     () async {
@@ -186,13 +191,37 @@ void main() {
     sync.dispose();
   });
   test(
-    'Account configuration failure blocks plaintext upload and can retry',
+    'Old account configuration failure does not block new plaintext text or images',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       var configOk = false;
-      var posts = 0;
+      final posts = <Map<String, dynamic>>[];
       server.listen((request) async {
-        if (request.method == 'POST') posts++;
+        if (request.method == 'POST') {
+          final payload =
+              jsonDecode(await utf8.decoder.bind(request).join())
+                  as Map<String, dynamic>;
+          posts.add(payload);
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'code': 200,
+              'data': {
+                'id': 'new-${posts.length}',
+                'content': payload['content'],
+                'contentType': payload['content_type'],
+                'encrypted': payload['encrypted'],
+                'deviceId': payload['device_id'],
+                'deviceName': payload['device_name'],
+                'imageUrl': payload['image_url'],
+                'preview': payload['preview'],
+                'createdAt': '2026-10-13T00:00:00Z',
+              },
+            }),
+          );
+          await request.response.close();
+          return;
+        }
         request.response.headers.contentType = ContentType.json;
         request.response.write(
           jsonEncode({
@@ -217,11 +246,26 @@ void main() {
       try {
         await manager.restoreAccountEncryption();
         expect(manager.encryptionNotice, isNotNull);
-        await expectLater(manager.addTextItem('private'), throwsStateError);
-        expect(posts, 0);
+        await manager.addTextItem('new text');
+        expect(posts.single['content'], 'new text');
+        expect(posts.single['encrypted'], isFalse);
         configOk = true;
         await manager.restoreAccountEncryption();
         expect(manager.encryptionNotice, isNull);
+        await manager.setEncryptionKey('old-custom-password', 'fixture');
+        await manager.addImageItem(
+          'data:image/png;base64,AQID',
+          preview: 'thumbnail',
+        );
+        await manager.addImageItem(
+          'rich text',
+          imageUrl: 'data:image/png;base64,AQID',
+          contentType: 'rich',
+        );
+        expect(posts[1]['content'], 'data:image/png;base64,AQID');
+        expect(posts[1]['preview'], 'thumbnail');
+        expect(posts[2]['image_url'], 'data:image/png;base64,AQID');
+        expect(posts.every((p) => p['encrypted'] == false), isTrue);
       } finally {
         manager.dispose();
         await server.close(force: true);

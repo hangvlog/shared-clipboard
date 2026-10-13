@@ -1,6 +1,6 @@
 Unicode true
 Name "Shared Clipboard"
-OutFile "SharedClipboard-1.1.0-windows-x64-setup.exe"
+OutFile "SharedClipboard-1.1.2-windows-x64-setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\SharedClipboard"
 RequestExecutionLevel user
 !include "MUI2.nsh"
@@ -13,7 +13,7 @@ Section
  WriteUninstaller "$INSTDIR\Uninstall.exe"
  CreateShortcut "$SMPROGRAMS\Shared Clipboard.lnk" "$INSTDIR\shared-clipboard.exe"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "DisplayName" "Shared Clipboard"
- WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "DisplayVersion" "1.1.0"
+ WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "DisplayVersion" "1.1.2"
  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\SharedClipboard" "UninstallString" '"$INSTDIR\Uninstall.exe"'
 SectionEnd
 Section "Uninstall"

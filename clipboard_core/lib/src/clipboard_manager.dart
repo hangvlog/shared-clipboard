@@ -20,8 +20,6 @@ class ClipboardManager {
   bool _accountConfigLoaded = false;
   int _generation = 0;
   int _syncRequest = 0;
-  bool _historyLoaded = false;
-  bool _encryptedHistory = false;
   bool get hasEncryptionKey => _cryptoService.hasKey;
   bool _active(int generation) =>
       !_disposed && !_suspended && generation == _generation;
@@ -90,11 +88,16 @@ class ClipboardManager {
 
   Future<void> restoreAccountEncryption() async {
     if (accountUsername != null && !_accountConfigLoaded) {
+      await _cryptoService.addDecryptionPassword('123456789', accountUsername!);
+      if (_disposed) {
+        _cryptoService.clearKey();
+        return;
+      }
       try {
         final password = await _apiClient.getAccountEncryptionPassword();
         if (_disposed) return;
         if (password != null && password.isNotEmpty) {
-          await _cryptoService.deriveKeyFromUsername(
+          await _cryptoService.addDecryptionPassword(
             password,
             accountUsername!,
           );
@@ -106,22 +109,8 @@ class ClipboardManager {
         _accountConfigLoaded = true;
         encryptionNotice = null;
       } catch (_) {
-        encryptionNotice = '账号加密配置读取失败，可刷新重试或输入原加密密码';
+        encryptionNotice = '部分旧记录的解锁配置未能读取，可刷新重试；新内容可正常同步';
       }
-    }
-  }
-
-  void _requireEncryptionReady() {
-    if (accountUsername != null &&
-        !_accountConfigLoaded &&
-        !_cryptoService.hasKey) {
-      throw StateError('账号加密配置尚未就绪，请刷新或输入原加密密码后同步');
-    }
-    if (accountUsername != null && !_historyLoaded) {
-      throw StateError('请先刷新历史记录，再同步当前剪贴板');
-    }
-    if (!_cryptoService.hasKey && _encryptedHistory) {
-      throw StateError('请先解锁加密剪贴板再同步');
     }
   }
 
@@ -157,7 +146,6 @@ class ClipboardManager {
     final beforeIds = _items.map((i) => i.id).toSet();
     final snapshot = await _apiClient.getHistory(limit: 50, metadataOnly: true);
     if (!active()) return;
-    _encryptedHistory = snapshot.any((item) => item.encrypted);
     final decrypted = await _reader.history(snapshot, active: active);
     if (!active()) return;
     final additions = _items.where(
@@ -168,7 +156,6 @@ class ClipboardManager {
       snapshot.map(ClipboardReader.diskMetadata).toList(),
     );
     if (!active()) return;
-    _historyLoaded = true;
     _items = decrypted;
     await platform.setLastSyncTime(DateTime.now().toUtc().toIso8601String());
     if (active()) _itemsController.add(_items);
@@ -176,7 +163,6 @@ class ClipboardManager {
 
   Future<void> addTextItem(String content) async {
     if (_disposed || _suspended) return;
-    _requireEncryptionReady();
     final generation = _generation;
     if (content.isEmpty) {
       throw StateError('内容为空');
@@ -192,23 +178,12 @@ class ClipboardManager {
       return;
     }
 
-    String sendContent = content;
-    bool encrypted = false;
-    String? contentHash;
-
-    if (_cryptoService.hasKey) {
-      sendContent = _cryptoService.encryptText(content);
-      contentHash = ClipboardCryptoService.generateContentHash(content);
-      encrypted = true;
-    }
-
     final serverItem = await _apiClient.addItem(
-      content: sendContent,
+      content: content,
       contentType: 'text',
       deviceId: _deviceInfo.deviceId,
       deviceName: _deviceInfo.deviceName,
-      encrypted: encrypted,
-      contentHash: contentHash,
+      encrypted: false,
     );
 
     if (!_active(generation)) return;
@@ -232,34 +207,15 @@ class ClipboardManager {
     String contentType = 'image',
   }) async {
     if (_disposed || _suspended) return;
-    _requireEncryptionReady();
     final generation = _generation;
-    String sendContent = imageContent;
-    String? sendPreview = preview;
-    bool encrypted = false;
-    String? contentHash;
-
-    if (_cryptoService.hasKey) {
-      sendContent = _cryptoService.encryptText(imageContent);
-      if (preview != null) {
-        sendPreview = _cryptoService.encryptText(preview);
-      }
-      contentHash = ClipboardCryptoService.generateContentHash(imageContent);
-      encrypted = true;
-    }
-    final sendImageUrl = imageUrl != null && encrypted
-        ? _cryptoService.encryptText(imageUrl)
-        : imageUrl;
-
     final serverItem = await _apiClient.addItem(
-      content: sendContent,
+      content: imageContent,
       contentType: contentType,
       deviceId: _deviceInfo.deviceId,
       deviceName: _deviceInfo.deviceName,
-      preview: sendPreview,
-      imageUrl: sendImageUrl,
-      encrypted: encrypted,
-      contentHash: contentHash,
+      preview: preview,
+      imageUrl: imageUrl,
+      encrypted: false,
     );
 
     if (!_active(generation)) return;
@@ -329,7 +285,7 @@ class ClipboardManager {
   }
 
   Future<void> setEncryptionKey(String password, String username) async {
-    await _cryptoService.deriveKeyFromUsername(password, username);
+    await _cryptoService.addDecryptionPassword(password, username);
     if (_disposed) {
       _cryptoService.clearKey();
       return;

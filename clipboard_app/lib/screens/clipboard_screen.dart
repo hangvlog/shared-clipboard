@@ -51,7 +51,8 @@ class ClipboardScreen extends StatelessWidget {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'unlock', child: Text('解锁加密剪贴板')),
+              if (store.items.any((item) => item.encrypted))
+                const PopupMenuItem(value: 'unlock', child: Text('解锁旧记录')),
               const PopupMenuItem(
                 value: 'clear',
                 child: Row(
@@ -94,7 +95,7 @@ class ClipboardScreen extends StatelessWidget {
               if (store.needsUnlock)
                 TextButton(
                   onPressed: () => _unlock(context, store, authStore.username!),
-                  child: const Text('部分记录需要原加密密码，点此解锁'),
+                  child: const Text('部分旧记录需要原密码，点此解锁'),
                 ),
               Expanded(child: _buildBody(context, store)),
             ],
@@ -225,11 +226,11 @@ class ClipboardScreen extends StatelessWidget {
     final password = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('解锁加密剪贴板'),
+        title: const Text('解锁旧记录'),
         content: TextField(
           onChanged: (value) => input = value,
           obscureText: true,
-          decoration: const InputDecoration(labelText: '各设备相同的剪贴板加密密码'),
+          decoration: const InputDecoration(labelText: '旧记录原来使用的密码'),
         ),
         actions: [
           TextButton(

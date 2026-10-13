@@ -2,6 +2,7 @@
 mod crypto;
 mod engine;
 mod events;
+mod legacy;
 mod platform;
 mod state;
 mod telemetry;

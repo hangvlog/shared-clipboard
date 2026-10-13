@@ -14,26 +14,30 @@ static std::string utf8(const std::wstring &s){int n=WideCharToMultiByte(CP_UTF8
 static std::string value(HWND field){int n=GetWindowTextLengthW(field);std::wstring text(n+1,L'\0');GetWindowTextW(field,text.data(),n+1);text.resize(n);return utf8(text);}
 static HWND control(const wchar_t *cls,const wchar_t *text,DWORD style,int x,int y,int w,int h,int id){HWND handle=CreateWindowW(cls,text,WS_CHILD|WS_VISIBLE|style,x,y,w,h,dialog,(HMENU)(INT_PTR)id,GetModuleHandleW(nullptr),nullptr);SendMessageW(handle,WM_SETFONT,(WPARAM)GetStockObject(DEFAULT_GUI_FONT),TRUE);return handle;}
 static LRESULT CALLBACK DialogProc(HWND window,UINT message,WPARAM w,LPARAM l){
- if(message==WM_COMMAND){int id=LOWORD(w);if(id==20){auto user=value(userField),password=value(passwordField),key=value(keyField);sc_login(user.c_str(),password.c_str(),key.c_str());DestroyWindow(window);return 0;}if(id==21){int selection=(int)SendMessageW(listField,LB_GETCURSEL,0,0);if(selection>=0)sc_history_select(selection);DestroyWindow(window);return 0;}}
+ if(message==WM_COMMAND){int id=LOWORD(w);if(id==20){auto user=value(userField),password=value(passwordField);sc_login(user.c_str(),password.c_str(),"");DestroyWindow(window);return 0;}if(id==22){auto key=value(keyField);sc_event(11,key.c_str());DestroyWindow(window);return 0;}if(id==21){int selection=(int)SendMessageW(listField,LB_GETCURSEL,0,0);if(selection>=0)sc_history_select(selection);DestroyWindow(window);return 0;}}
  if(message==WM_CLOSE){DestroyWindow(window);return 0;}
  if(message==WM_DESTROY){sc_event(9,"");rows.clear();dialog=nullptr;userField=passwordField=keyField=listField=nullptr;return 0;}
  return DefWindowProcW(window,message,w,l);
 }
 static void createDialog(const wchar_t *title,int height){if(dialog){SetForegroundWindow(dialog);return;}dialog=CreateWindowExW(WS_EX_DLGMODALFRAME,L"SharedClipboardDialog",title,WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU, CW_USEDEFAULT,CW_USEDEFAULT,560,height,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);}
-static void login(){if(dialog){SetForegroundWindow(dialog);return;}createDialog(L"登录共享剪贴板",300);
- control(L"STATIC",L"各设备使用同一账号；加密密码需保持一致。",0,18,16,500,26,0);
+static void login(){if(dialog){SetForegroundWindow(dialog);return;}createDialog(L"登录共享剪贴板",240);
+ control(L"STATIC",L"各设备使用同一账号即可同步，无需加密密码。",0,18,16,500,26,0);
  userField=control(L"EDIT",L"",WS_BORDER|ES_AUTOHSCROLL|WS_TABSTOP,160,55,345,26,11);control(L"STATIC",L"账号",0,18,59,140,24,0);
  passwordField=control(L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL|WS_TABSTOP,160,96,345,26,12);control(L"STATIC",L"登录密码",0,18,100,140,24,0);
- keyField=control(L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL|WS_TABSTOP,160,137,345,26,13);control(L"STATIC",L"加密密码（可选）",0,18,141,140,24,0);
- control(L"BUTTON",L"登录",BS_DEFPUSHBUTTON|WS_TABSTOP,360,194,145,32,20);ShowWindow(dialog,SW_SHOW);SetForegroundWindow(dialog);SetFocus(userField);
+ control(L"BUTTON",L"登录",BS_DEFPUSHBUTTON|WS_TABSTOP,360,145,145,32,20);ShowWindow(dialog,SW_SHOW);SetForegroundWindow(dialog);SetFocus(userField);
+}
+static void unlock(){if(dialog){SetForegroundWindow(dialog);return;}createDialog(L"解锁旧记录",200);
+ control(L"STATIC",L"仅用于读取旧内容，不影响新内容同步。",0,18,16,500,26,0);
+ keyField=control(L"EDIT",L"",WS_BORDER|ES_PASSWORD|ES_AUTOHSCROLL|WS_TABSTOP,160,55,345,26,13);control(L"STATIC",L"旧记录原密码",0,18,59,140,24,0);
+ control(L"BUTTON",L"解锁",BS_DEFPUSHBUTTON|WS_TABSTOP,360,105,145,32,22);ShowWindow(dialog,SW_SHOW);SetForegroundWindow(dialog);SetFocus(keyField);
 }
 static void showHistory(){if(dialog){SetForegroundWindow(dialog);return;}createDialog(L"共享剪贴板历史",420);listField=control(L"LISTBOX",L"",WS_BORDER|WS_VSCROLL|LBS_NOTIFY,16,16,510,300,14);for(auto &row:rows)SendMessageW(listField,LB_ADDSTRING,0,(LPARAM)row.c_str());control(L"BUTTON",L"复制并关闭",BS_DEFPUSHBUTTON,350,328,176,32,21);ShowWindow(dialog,SW_SHOW);SetForegroundWindow(dialog);}
 static LRESULT CALLBACK WndProc(HWND window,UINT message,WPARAM w,LPARAM l){
  if(message==WM_CLIPBOARDUPDATE){DWORD revision=GetClipboardSequenceNumber();if(revision!=lastRevision){lastRevision=revision;sc_event(2,"");}return 0;}
  if(message==WM_APP+1&&(l==WM_RBUTTONUP||l==WM_LBUTTONUP)){
   HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING|MF_DISABLED,0,status.c_str());AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
-  AppendMenuW(menu,MF_STRING,1,L"登录 / 切换账号");AppendMenuW(menu,MF_STRING,2,L"历史记录");AppendMenuW(menu,MF_STRING,3,L"同步当前剪贴板");AppendMenuW(menu,MF_STRING,4,L"暂停 / 恢复");AppendMenuW(menu,MF_STRING,5,L"退出登录");AppendMenuW(menu,MF_STRING,6,L"退出");POINT point;GetCursorPos(&point);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(menu);
-  if(id==1)login();if(id==2)sc_event(5,"");if(id==3)sc_event(2,"");if(id==4)sc_event(7,"");if(id==5)sc_event(8,"");if(id==6)DestroyWindow(window);return 0;
+  AppendMenuW(menu,MF_STRING,1,L"登录 / 切换账号");AppendMenuW(menu,MF_STRING,2,L"历史记录");AppendMenuW(menu,MF_STRING,7,L"解锁旧记录");AppendMenuW(menu,MF_STRING,3,L"同步当前剪贴板");AppendMenuW(menu,MF_STRING,4,L"暂停 / 恢复");AppendMenuW(menu,MF_STRING,5,L"退出登录");AppendMenuW(menu,MF_STRING,6,L"退出");POINT point;GetCursorPos(&point);SetForegroundWindow(window);int id=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(menu);
+  if(id==7)unlock();if(id==1)login();if(id==2)sc_event(5,"");if(id==3)sc_event(2,"");if(id==4)sc_event(7,"");if(id==5)sc_event(8,"");if(id==6)DestroyWindow(window);return 0;
  }
  if(message==WM_APP+2){auto *text=(std::wstring*)l;status=*text;delete text;wcsncpy_s(tray.szTip,(L"共享剪贴板 · "+status).c_str(),_TRUNCATE);tray.uFlags=NIF_TIP;Shell_NotifyIconW(NIM_MODIFY,&tray);if(status==L"请登录同一个账号")login();return 0;}
  if(message==WM_APP+3){rows.clear();return 0;}

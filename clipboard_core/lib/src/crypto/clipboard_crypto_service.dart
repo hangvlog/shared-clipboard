@@ -17,9 +17,20 @@ class ClipboardCryptoService {
   static const int _keyLength = 32; // 256 bits
 
   Uint8List? _keyBytes;
+  final List<Uint8List> _legacyKeys = [];
+
+  /// Read-only compatibility keys; never select an encryption mode.
+  Future<void> addDecryptionPassword(String password, String username) async {
+    final key = _pbkdf2DeriveKey(password, _deriveFixedSalt(username));
+    if (!_legacyKeys.any(
+      (existing) => base64Encode(existing) == base64Encode(key),
+    )) {
+      _legacyKeys.add(key);
+    }
+  }
 
   /// 是否已设置加密密钥
-  bool get hasKey => _keyBytes != null;
+  bool get hasKey => _keyBytes != null || _legacyKeys.isNotEmpty;
 
   /// 从密码 + 用户名派生加密密钥（确定性，跨设备一致）
   ///
@@ -71,20 +82,25 @@ class ClipboardCryptoService {
   ///
   /// 输入格式与桌面端一致：base64([12-byte IV][AES-GCM ciphertext + tag])
   String decryptText(String encryptedBase64) {
-    if (_keyBytes == null) throw StateError('加密密钥未设置');
+    if (!hasKey) throw StateError('加密密钥未设置');
 
     final combined = base64Decode(encryptedBase64);
     final iv = Uint8List.fromList(combined.sublist(0, _ivLength));
     final ciphertext = Uint8List.fromList(combined.sublist(_ivLength));
 
-    final cipher = GCMBlockCipher(AESEngine())
-      ..init(
-        false,
-        AEADParameters(KeyParameter(_keyBytes!), 128, iv, Uint8List(0)),
-      );
-
-    final decrypted = cipher.process(ciphertext);
-    return utf8.decode(decrypted);
+    for (final key in [?_keyBytes, ..._legacyKeys]) {
+      try {
+        final cipher = GCMBlockCipher(AESEngine())
+          ..init(
+            false,
+            AEADParameters(KeyParameter(key), 128, iv, Uint8List(0)),
+          );
+        return utf8.decode(cipher.process(ciphertext));
+      } catch (_) {
+        // Mixed histories can contain more than one old password.
+      }
+    }
+    throw StateError('此记录需要原加密密码');
   }
 
   /// 生成文本内容的 SHA-256 哈希（用于加密场景下服务端去重）
@@ -110,6 +126,7 @@ class ClipboardCryptoService {
   /// 清除密钥
   void clearKey() {
     _keyBytes = null;
+    _legacyKeys.clear();
   }
 
   // ============================================

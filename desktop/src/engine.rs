@@ -1,4 +1,4 @@
-use crate::{crypto, platform as p, state::State};
+use crate::{crypto, legacy, platform as p, state::State};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -19,49 +19,8 @@ fn ws() -> String {
 fn endpoint(path: &str) -> String {
     api() + path
 }
-fn summary(item: &Value) -> String {
-    let kind = item["contentType"].as_str().unwrap_or("text");
-    let text = if item["encrypted"] == true {
-        "[加密记录]".into()
-    } else if kind == "image" {
-        "[图片]".into()
-    } else {
-        item["content"]
-            .as_str()
-            .unwrap_or("")
-            .chars()
-            .take(80)
-            .collect::<String>()
-            .replace(['\n', '\r'], " ")
-    };
-    format!(
-        "{}  {}",
-        item["deviceName"].as_str().unwrap_or("设备"),
-        text
-    )
-}
-fn decrypt(mut item: Value, s: &State) -> Result<Value, String> {
-    if item["encrypted"] == true {
-        if s.key.is_empty() {
-            return Err("请登录并填写相同的剪贴板加密密码".into());
-        }
-        for field in ["content", "preview", "imageUrl"] {
-            if let Some(value) = item[field].as_str().filter(|v| !v.is_empty()) {
-                // Legacy rich imageUrl may be an unencrypted URI.
-                if field == "imageUrl"
-                    && (value.starts_with("data:") || value.starts_with("https://"))
-                {
-                    continue;
-                }
-                item[field] = Value::String(crypto::open(value, &s.key)?);
-            }
-        }
-        item["encrypted"] = json!(false);
-    }
-    Ok(item)
-}
-fn copy(item: Value, s: &State) -> Result<String, String> {
-    let item = decrypt(item, s)?;
+fn copy(item: Value, keys: &[String]) -> Result<String, String> {
+    let item = legacy::decrypt(item, keys)?;
     let kind = item["contentType"].as_str().unwrap_or("text");
     let content = item["content"].as_str().unwrap_or("");
     let source = if kind == "image" {
@@ -90,6 +49,7 @@ fn fingerprint(text: &str, image: &[u8]) -> String {
 }
 struct Runtime {
     state: State,
+    legacy_keys: Vec<String>,
     generation: u64,
     connected: bool,
     retry: Instant,
@@ -98,6 +58,19 @@ struct Runtime {
     history: Vec<Value>,
 }
 impl Runtime {
+    fn restore_legacy_keys(&mut self) {
+        if let Ok(data) = p::request(
+            "GET",
+            &endpoint("/auth/encryption-salt"),
+            &self.state.token,
+            &Value::Null,
+        ) {
+            if let Ok(Some(key)) = legacy::account_key(&data, &self.state.username) {
+                legacy::add(&mut self.legacy_keys, key);
+            }
+        }
+    }
+
     fn reconnect(&mut self) {
         self.generation += 1;
         p::ws_close();
@@ -114,6 +87,7 @@ impl Runtime {
         if error.contains("登录已过期") {
             self.state.token.clear();
             self.state.key.clear();
+            self.legacy_keys.clear();
             self.state.clear_pending();
             let _ = self.state.save();
             self.generation += 1;
@@ -166,18 +140,9 @@ impl Runtime {
             format!("data:image/png;base64,{}", STANDARD.encode(&image))
         };
         let content = if kind == "image" { uri.clone() } else { text };
-        let mut image_url = if kind == "rich" { uri } else { String::new() };
+        let image_url = if kind == "rich" { uri } else { String::new() };
         let content_hash = crypto::hash(content.as_bytes());
-        let encrypted = !self.state.key.is_empty();
-        let content = if encrypted {
-            if !image_url.is_empty() {
-                image_url = crypto::seal(&image_url, &self.state.key)?
-            };
-            crypto::seal(&content, &self.state.key)?
-        } else {
-            content
-        };
-        self.state.add(json!({"content":content,"content_type":kind,"device_id":self.state.device,"device_name":if cfg!(target_os="macos"){"Mac"}else{"Windows"},"encrypted":encrypted,"content_hash":content_hash,"image_url":if image_url.is_empty(){Value::Null}else{json!(image_url)}}))?;
+        self.state.add(json!({"content":content,"content_type":kind,"device_id":self.state.device,"device_name":if cfg!(target_os="macos"){"Mac"}else{"Windows"},"encrypted":false,"content_hash":content_hash,"image_url":if image_url.is_empty(){Value::Null}else{json!(image_url)}}))?;
         self.last_hash = hash;
         self.flush()?;
         p::status(if self.connected {
@@ -207,6 +172,7 @@ impl Runtime {
             if ack[0]["success"] != true {
                 return Err("登录已过期，请重新登录".into());
             }
+            self.restore_legacy_keys();
             self.connected = true;
             self.delay = 1;
             p::status("已连接 · 自动同步");
@@ -235,7 +201,7 @@ impl Runtime {
             return Ok(());
         }
         if item["deviceId"] != self.state.device {
-            self.last_hash = copy(item.clone(), &self.state)?;
+            self.last_hash = copy(item.clone(), &self.legacy_keys)?;
         }
         self.state.last_id = id.into();
         self.state.save()
@@ -269,6 +235,7 @@ impl Runtime {
                     device: self.state.device.clone(),
                     ..State::default()
                 };
+                self.legacy_keys = legacy::keys(&self.state);
                 self.state.save()?;
                 p::reset_clipboard();
                 crate::events::discard_clipboard();
@@ -287,6 +254,7 @@ impl Runtime {
                 }
             }
             5 => {
+                self.restore_legacy_keys();
                 let rows = p::request(
                     "GET",
                     &endpoint("/clipboard/history?limit=50&metadata_only=true"),
@@ -297,7 +265,26 @@ impl Runtime {
                 let labels = self
                     .history
                     .iter()
-                    .map(|v| summary(&decrypt(v.clone(), &self.state).unwrap_or(v.clone())))
+                    .map(|v| {
+                        // Fetch one text body at a time; retain only its short label.
+                        let full = if v["encrypted"] == true && v["contentType"] == "text" {
+                            p::request(
+                                "GET",
+                                &endpoint(&format!(
+                                    "/clipboard/item/{}",
+                                    v["id"].as_str().unwrap_or("")
+                                )),
+                                &self.state.token,
+                                &Value::Null,
+                            )
+                            .unwrap_or(v.clone())
+                        } else {
+                            v.clone()
+                        };
+                        legacy::summary(
+                            &legacy::decrypt(full, &self.legacy_keys).unwrap_or(v.clone()),
+                        )
+                    })
                     .collect::<Vec<_>>();
                 p::history(&labels);
             }
@@ -312,7 +299,7 @@ impl Runtime {
                         &self.state.token,
                         &Value::Null,
                     )?;
-                    self.last_hash = copy(full, &self.state)?;
+                    self.last_hash = copy(full, &self.legacy_keys)?;
                 }
             }
             7 => {
@@ -333,20 +320,35 @@ impl Runtime {
                     ..State::default()
                 };
                 self.state.save()?;
+                self.legacy_keys.clear();
                 self.last_hash.clear();
                 self.history.clear();
                 p::status("未登录");
             }
             9 => self.history.clear(),
             10 => self.reconnect(),
+            11 => {
+                if self.state.token.is_empty() {
+                    return Err("请先登录".into());
+                }
+                if !data.is_empty() {
+                    self.state.key = crypto::derive(&data, &self.state.username);
+                    legacy::add(&mut self.legacy_keys, self.state.key.clone());
+                    self.state.save()?;
+                    p::status("已添加旧记录密码，请重新打开历史记录");
+                }
+            }
             _ => {}
         }
         Ok(())
     }
 }
 pub fn run() {
+    let state = State::load();
+    let legacy_keys = legacy::keys(&state);
     let mut r = Runtime {
-        state: State::load(),
+        state,
+        legacy_keys,
         generation: 0,
         connected: false,
         retry: Instant::now(),

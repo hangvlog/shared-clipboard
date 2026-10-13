@@ -86,6 +86,39 @@ mod tests {
         );
     }
     #[test]
+    fn old_records_try_default_account_and_saved_keys() {
+        use crate::{legacy, state::State};
+        use serde_json::json;
+        let state = State {
+            username: "fixture-user".into(),
+            key: derive("custom", "fixture-user"),
+            ..State::default()
+        };
+        let mut keys = legacy::keys(&state);
+        let account = legacy::account_key(
+            &json!({"password": STANDARD.encode("%E5%AF%86%E7%A0%81%2Bfixture%20%25")}),
+            &state.username,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(account, derive("密码+fixture %", "fixture-user"));
+        legacy::add(&mut keys, account);
+        for password in ["123456789", "custom", "密码+fixture %"] {
+            let key = derive(password, &state.username);
+            let item = json!({"content": seal("可见正文", &key).unwrap(), "imageUrl": seal("data:image/png;base64,AQID", &key).unwrap(), "encrypted": true});
+            let plain = legacy::decrypt(item, &keys).unwrap();
+            assert_eq!(plain["content"], "可见正文");
+            assert_eq!(plain["imageUrl"], "data:image/png;base64,AQID");
+            assert_eq!(plain["encrypted"], false);
+        }
+        let unknown = json!({"content": seal("old", &derive("unknown", &state.username)).unwrap(), "encrypted": true});
+        assert!(legacy::decrypt(unknown, &keys).is_err());
+        let meta = json!({"content":"", "encrypted":true, "metadataOnly":true});
+        assert!(legacy::decrypt(meta, &keys).is_err());
+        let plain = json!({"content":"already readable", "encrypted":false});
+        assert_eq!(legacy::decrypt(plain.clone(), &keys).unwrap(), plain);
+    }
+    #[test]
     fn authenticated_encryption() {
         let k = derive("test-password", "fixture-a");
         let s = seal("中文 clipboard", &k).unwrap();

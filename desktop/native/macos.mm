@@ -19,7 +19,7 @@ static NSMutableArray<NSString*> *history;
  [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
  tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];tray.button.title=@"▣";tray.button.toolTip=@"共享剪贴板";
  NSMenu *menu=[NSMenu new];connection=[[NSMenuItem alloc]initWithTitle:@"正在启动" action:nil keyEquivalent:@""];[menu addItem:connection];
- for(NSArray *entry in @[@[@"登录 / 切换账号",NSStringFromSelector(@selector(login))],@[@"历史记录",NSStringFromSelector(@selector(showHistory))],@[@"同步当前剪贴板",NSStringFromSelector(@selector(sync))],@[@"暂停 / 恢复",NSStringFromSelector(@selector(pause))],@[@"退出登录",NSStringFromSelector(@selector(logout))],@[@"退出",NSStringFromSelector(@selector(quit))]]){
+ for(NSArray *entry in @[@[@"登录 / 切换账号",NSStringFromSelector(@selector(login))],@[@"历史记录",NSStringFromSelector(@selector(showHistory))],@[@"解锁旧记录",NSStringFromSelector(@selector(unlock))],@[@"同步当前剪贴板",NSStringFromSelector(@selector(sync))],@[@"暂停 / 恢复",NSStringFromSelector(@selector(pause))],@[@"退出登录",NSStringFromSelector(@selector(logout))],@[@"退出",NSStringFromSelector(@selector(quit))]]){
   NSMenuItem *item=[[NSMenuItem alloc]initWithTitle:entry[0] action:NSSelectorFromString(entry[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
  }
  tray.menu=menu;lastChange=NSPasteboard.generalPasteboard.changeCount;
@@ -36,15 +36,20 @@ static NSMutableArray<NSString*> *history;
 -(BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {if(!visible)[self login];return YES;}
 -(void)login {
  if(self.showingLogin)return;self.showingLogin=YES;
- NSAlert *alert=[NSAlert new];alert.messageText=@"登录共享剪贴板";alert.informativeText=@"各设备使用同一账号。加密密码可选；填写后需在其他设备使用相同密码解锁。";
+ NSAlert *alert=[NSAlert new];alert.messageText=@"登录共享剪贴板";alert.informativeText=@"各设备使用同一账号即可同步；新内容无需设置加密密码。";
  [alert addButtonWithTitle:@"登录"];[alert addButtonWithTitle:@"取消"];
- NSView *form=[[NSView alloc]initWithFrame:NSMakeRect(0,0,340,108)];
- NSTextField *user=[[NSTextField alloc]initWithFrame:NSMakeRect(0,76,340,24)];user.placeholderString=@"账号";
- NSSecureTextField *password=[[NSSecureTextField alloc]initWithFrame:NSMakeRect(0,40,340,24)];password.placeholderString=@"登录密码";
- NSSecureTextField *key=[[NSSecureTextField alloc]initWithFrame:NSMakeRect(0,4,340,24)];key.placeholderString=@"剪贴板加密密码（可选）";
- [form addSubview:user];[form addSubview:password];[form addSubview:key];alert.accessoryView=form;
- [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn)sc_login(user.stringValue.UTF8String,password.stringValue.UTF8String,key.stringValue.UTF8String);
+ NSView *form=[[NSView alloc]initWithFrame:NSMakeRect(0,0,340,72)];
+ NSTextField *user=[[NSTextField alloc]initWithFrame:NSMakeRect(0,40,340,24)];user.placeholderString=@"账号";
+ NSSecureTextField *password=[[NSSecureTextField alloc]initWithFrame:NSMakeRect(0,4,340,24)];password.placeholderString=@"登录密码";
+ [form addSubview:user];[form addSubview:password];alert.accessoryView=form;
+ [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn)sc_login(user.stringValue.UTF8String,password.stringValue.UTF8String,"");
  self.showingLogin=NO;
+}
+-(void)unlock {
+ NSAlert *alert=[NSAlert new];alert.messageText=@"解锁旧记录";alert.informativeText=@"仅用于读取旧内容，不影响新内容同步。";
+ [alert addButtonWithTitle:@"解锁"];[alert addButtonWithTitle:@"取消"];
+ NSSecureTextField *field=[[NSSecureTextField alloc]initWithFrame:NSMakeRect(0,0,340,24)];field.placeholderString=@"旧记录原来使用的密码";alert.accessoryView=field;
+ [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn)sc_event(11,field.stringValue.UTF8String);
 }
 -(void)showHistory{sc_event(5,"");}
 -(void)sync{sc_event(2,"");}
