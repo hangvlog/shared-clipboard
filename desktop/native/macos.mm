@@ -1,39 +1,38 @@
 #import <AppKit/AppKit.h>
 #include "bridge.h"
+#import "macos_ui.h"
 #include <stdlib.h>
 #include <string.h>
 #include <atomic>
 static std::atomic<NSInteger> lastChange;
 static NSStatusItem *tray;
 static NSMenuItem *connection;
-static NSMutableArray<NSString*> *history;
+static ClipboardWindow *mainWindow;
 @interface ClipboardApp : NSObject<NSApplicationDelegate>
 @property NSTimer *timer;
 @property BOOL showingLogin;
 @end
-@interface ClipboardApp (History)
--(void)presentHistory;
-@end
 @implementation ClipboardApp
 -(void)applicationDidFinishLaunching:(NSNotification*)notice {
- [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+ [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
  tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];tray.button.title=@"▣";tray.button.toolTip=@"共享剪贴板";
  NSMenu *menu=[NSMenu new];connection=[[NSMenuItem alloc]initWithTitle:@"正在启动" action:nil keyEquivalent:@""];[menu addItem:connection];
  for(NSArray *entry in @[@[@"登录 / 切换账号",NSStringFromSelector(@selector(login))],@[@"历史记录",NSStringFromSelector(@selector(showHistory))],@[@"解锁旧记录",NSStringFromSelector(@selector(unlock))],@[@"同步当前剪贴板",NSStringFromSelector(@selector(sync))],@[@"暂停 / 恢复",NSStringFromSelector(@selector(pause))],@[@"退出登录",NSStringFromSelector(@selector(logout))],@[@"退出",NSStringFromSelector(@selector(quit))]]){
   NSMenuItem *item=[[NSMenuItem alloc]initWithTitle:entry[0] action:NSSelectorFromString(entry[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
  }
+ NSMenu *bar=[NSMenu new];NSMenuItem *appMenu=[NSMenuItem new];[bar addItem:appMenu];NSMenu *commands=[NSMenu new];NSMenuItem *open=[[NSMenuItem alloc]initWithTitle:@"打开共享剪贴板" action:@selector(showHistory) keyEquivalent:@"0"];open.target=self;[commands addItem:open];[commands addItem:NSMenuItem.separatorItem];NSMenuItem *exit=[[NSMenuItem alloc]initWithTitle:@"退出共享剪贴板" action:@selector(quit) keyEquivalent:@"q"];exit.target=self;[commands addItem:exit];appMenu.submenu=commands;NSApp.mainMenu=bar;
  tray.menu=menu;lastChange=NSPasteboard.generalPasteboard.changeCount;
  self.timer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(tick) userInfo:nil repeats:YES];self.timer.tolerance=.25;
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(sleep:) name:NSWorkspaceWillSleepNotification object:nil];
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(wake:) name:NSWorkspaceDidWakeNotification object:nil];
- sc_start();
+ mainWindow=[ClipboardWindow new];sc_start();[mainWindow open];
  if([NSProcessInfo.processInfo.arguments containsObject:@"--login"])[self login];
  if([NSProcessInfo.processInfo.arguments containsObject:@"--history"])sc_event(5,"");
 }
 -(void)tick {NSInteger revision=NSPasteboard.generalPasteboard.changeCount;if(revision!=lastChange){lastChange=revision;sc_event(2,"");}}
 -(void)sleep:(NSNotification*)n {[self.timer invalidate];self.timer=nil;}
 -(void)wake:(NSNotification*)n {lastChange=NSPasteboard.generalPasteboard.changeCount;self.timer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(tick) userInfo:nil repeats:YES];self.timer.tolerance=.25;}
--(BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {if(!visible)[self login];return YES;}
+-(BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {[mainWindow open];return YES;}
 -(void)login {
  if(self.showingLogin)return;self.showingLogin=YES;
  NSAlert *alert=[NSAlert new];alert.messageText=@"登录共享剪贴板";alert.informativeText=@"各设备使用同一账号即可同步；新内容无需设置加密密码。";
@@ -51,25 +50,17 @@ static NSMutableArray<NSString*> *history;
  NSSecureTextField *field=[[NSSecureTextField alloc]initWithFrame:NSMakeRect(0,0,340,24)];field.placeholderString=@"旧记录原来使用的密码";alert.accessoryView=field;
  [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn)sc_event(11,field.stringValue.UTF8String);
 }
--(void)showHistory{sc_event(5,"");}
+-(void)showHistory{[mainWindow open];}
 -(void)sync{sc_event(2,"");}
 -(void)pause{sc_event(7,"");}
--(void)logout{sc_event(8,"");}
+-(void)logout{sc_event(8,"");mainWindow.loggedIn=NO;[mainWindow clear];}
 -(void)quit{native_ws_close();[NSApp terminate:nil];}
 @end
 extern "C" int native_run(){@autoreleasepool{NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(bundle&&[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].count>1)return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
-extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];if([s isEqualToString:@"请登录同一个账号"])[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(login) withObject:nil waitUntilDone:NO];});}
-extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{history=[NSMutableArray new];});}
-extern "C" void native_history_item(const char*, const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{[history addObject:s];});}
-extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(presentHistory) withObject:nil waitUntilDone:NO];});}
-@implementation ClipboardApp (History)
--(void)presentHistory {
- NSAlert *alert=[NSAlert new];alert.messageText=@"历史记录";alert.informativeText=@"选择一条复制；关闭后释放历史内容。";[alert addButtonWithTitle:@"复制"];[alert addButtonWithTitle:@"关闭"];
- NSPopUpButton *list=[[NSPopUpButton alloc]initWithFrame:NSMakeRect(0,0,500,30) pullsDown:NO];[list addItemsWithTitles:history.count?history:@[@"暂无记录"]];alert.accessoryView=list;
- [NSApp activateIgnoringOtherApps:YES];if([alert runModal]==NSAlertFirstButtonReturn&&history.count)sc_history_select((int)list.indexOfSelectedItem);
- sc_event(9,"");history=nil;
-}
-@end
+extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];[mainWindow status:s];});}
+extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{[mainWindow beginHistory];});}
+extern "C" void native_history_item(const char *id,const char *text){NSString *identifier=@(id),*s=@(text);dispatch_async(dispatch_get_main_queue(),^{[mainWindow addId:identifier label:s];});}
+extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{[mainWindow endHistory];});}
 extern "C" char *native_clipboard_text(){@autoreleasepool{
  NSPasteboard *pb=NSPasteboard.generalPasteboard;
  if([pb.types containsObject:NSPasteboardTypeFileURL])return strdup("");
@@ -105,5 +96,5 @@ extern "C" int native_clipboard_write(const char *text,const unsigned char *imag
 
 extern "C" void native_clipboard_reset(){lastChange=NSPasteboard.generalPasteboard.changeCount;}
 
-extern "C" void native_detail(const char*,const char*,const unsigned char*,size_t,int){}
-extern "C" void native_session(int){}
+extern "C" void native_detail(const char *id,const char *text,const unsigned char *image,size_t length,int success){NSString *identifier=@(id),*value=@(text);NSData *bytes=length?[NSData dataWithBytes:image length:length]:nil;dispatch_async(dispatch_get_main_queue(),^{[mainWindow detailId:identifier text:value image:bytes success:success!=0];});}
+extern "C" void native_session(int logged){dispatch_async(dispatch_get_main_queue(),^{mainWindow.loggedIn=logged!=0;[mainWindow clear];if(logged&&mainWindow.window.visible)sc_event(5,"");});}

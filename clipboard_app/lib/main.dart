@@ -4,6 +4,7 @@ import 'stores/clipboard_store.dart';
 import 'stores/auth_store.dart';
 import 'screens/login_screen.dart';
 import 'screens/clipboard_screen.dart';
+import 'widgets/glass_surface.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,16 +30,8 @@ class ClipboardApp extends StatelessWidget {
       child: MaterialApp(
         title: '共享剪贴板',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorSchemeSeed: Colors.blue,
-          useMaterial3: true,
-          brightness: Brightness.light,
-        ),
-        darkTheme: ThemeData(
-          colorSchemeSeed: Colors.blue,
-          useMaterial3: true,
-          brightness: Brightness.dark,
-        ),
+        theme: clipboardTheme(Brightness.light),
+        darkTheme: clipboardTheme(Brightness.dark),
         themeMode: ThemeMode.system,
         home: const AuthGate(),
       ),

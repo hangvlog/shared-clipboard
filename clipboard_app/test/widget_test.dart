@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:clipboard_app/widgets/glass_surface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clipboard_app/main.dart';
 import 'package:clipboard_app/widgets/clipboard_detail.dart';
@@ -62,7 +63,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SelectableText), findsNothing);
   });
+  testWidgets('Glass cards remain readable with large text and dark mode', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final item = ClipboardItem(
+      id: 'large',
+      content: '完整内容与跨设备同步',
+      contentType: 'text',
+      deviceId: 'phone',
+      deviceName: 'A very long Android device name',
+      createdAt: '2026-10-13T00:00:00Z',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: clipboardTheme(Brightness.dark),
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.8)),
+          child: GlassBackground(
+            child: Scaffold(
+              body: SingleChildScrollView(
+                child: ClipboardItemTile(
+                  item: item,
+                  onCopy: () {},
+                  onDelete: () {},
+                  onView: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.byTooltip('复制'), findsOneWidget);
+  });
   for (final viewport in <Size>[
+    const Size(320, 640),
     const Size(390, 844),
     const Size(768, 1024),
     const Size(1366, 1024),

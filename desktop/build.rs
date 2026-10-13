@@ -6,12 +6,13 @@ fn main() {
         build
             .files([
                 "native/macos.mm",
+                "native/macos_ui.mm",
                 "native/macos_network.mm",
                 "native/macos_storage.mm",
             ])
             .flag("-std=c++17")
             .flag("-fobjc-arc");
-        for framework in ["AppKit", "Foundation", "Security"] {
+        for framework in ["AppKit", "Foundation", "Security", "QuartzCore"] {
             println!("cargo:rustc-link-lib=framework={framework}");
         }
     } else if os == "windows" {

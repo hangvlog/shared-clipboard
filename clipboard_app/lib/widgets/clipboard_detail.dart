@@ -104,7 +104,8 @@ class _ClipboardDetailState extends State<_ClipboardDetail>
   Widget build(BuildContext context) {
     final item = _item;
     return AlertDialog(
-      title: const Text('剪贴板内容'),
+      title: const Text('内容预览'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(

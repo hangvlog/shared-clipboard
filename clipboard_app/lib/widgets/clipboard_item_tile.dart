@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'glass_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:clipboard_core/clipboard_core.dart';
 
@@ -21,78 +22,93 @@ class ClipboardItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: InkWell(
-        onTap: onView ?? onCopy,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 内容区域
-              _buildContent(context),
-              const SizedBox(height: 8),
-              // 底部信息栏
-              Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: GlassSurface(
+        padding: EdgeInsets.zero,
+        radius: 22,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onView ?? onCopy,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 设备图标
-                  Icon(_getDeviceIcon(), size: 14, color: colorScheme.outline),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      item.deviceName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.outline,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // 时间
-                  Icon(Icons.access_time, size: 14, color: colorScheme.outline),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      _formatTime(item.createdAt),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colorScheme.outline,
-                      ),
-                    ),
-                  ),
-                  // 类型标签
-                  _buildTypeBadge(context),
-                  const SizedBox(width: 8),
-                  if (onView != null)
-                    IconButton(
-                      tooltip: '查看完整内容',
-                      onPressed: onView,
-                      icon: const Icon(Icons.visibility_outlined, size: 18),
-                    ),
-                  IconButton(
-                    tooltip: '复制',
-                    onPressed: onCopy,
-                    icon: const Icon(Icons.copy, size: 18),
-                  ),
-                  // 删除按钮
-                  if (onDelete != null)
-                    InkWell(
-                      onTap: onDelete,
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Icon(
-                          Icons.close,
-                          size: 16,
-                          color: colorScheme.outline,
+                          _getDeviceIcon(),
+                          size: 18,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.deviceName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                            Text(
+                              _formatTime(item.createdAt),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _buildTypeBadge(context),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _buildContent(context),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (onDelete != null)
+                        IconButton(
+                          tooltip: '删除记录',
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 20,
+                          ),
+                        ),
+                      const Spacer(),
+                      if (onView != null)
+                        IconButton(
+                          tooltip: '查看完整内容',
+                          onPressed: onView,
+                          icon: const Icon(
+                            Icons.open_in_full_rounded,
+                            size: 20,
+                          ),
+                        ),
+                      IconButton(
+                        tooltip: '复制',
+                        onPressed: onCopy,
+                        icon: const Icon(Icons.copy_rounded, size: 20),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -121,7 +137,7 @@ class ClipboardItemTile extends StatelessWidget {
       item.content,
       maxLines: 5,
       overflow: TextOverflow.ellipsis,
-      style: Theme.of(context).textTheme.bodyMedium,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
     );
   }
 
@@ -167,7 +183,7 @@ class ClipboardItemTile extends StatelessWidget {
           item.content,
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
         ),
         // 图片部分（如有预览）
         if (item.imageUrl != null || item.preview != null) ...[
@@ -225,7 +241,7 @@ class ClipboardItemTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,

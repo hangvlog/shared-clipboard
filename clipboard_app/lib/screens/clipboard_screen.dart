@@ -6,6 +6,7 @@ import '../stores/auth_store.dart';
 import '../widgets/clipboard_item_tile.dart';
 import '../widgets/clipboard_detail.dart';
 import 'dart:io';
+import '../widgets/glass_surface.dart';
 
 /// 剪贴板主页面
 class ClipboardScreen extends StatelessWidget {
@@ -16,98 +17,141 @@ class ClipboardScreen extends StatelessWidget {
     final store = context.watch<ClipboardStore>();
     final authStore = context.read<AuthStore>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('共享剪贴板'),
-        actions: [
-          // 连接状态指示器
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Icon(
-              Icons.circle,
-              size: 12,
-              color: store.isConnected ? Colors.green : Colors.grey,
+    return GlassBackground(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            '共享剪贴板',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          centerTitle: false,
+          actions: [
+            // 连接状态指示器
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.circle,
+                size: 12,
+                color: store.isConnected ? Colors.green : Colors.grey,
+              ),
+            ),
+            // 刷新
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: store.isLoading ? null : () => store.refresh(),
+              tooltip: '刷新',
+            ),
+            // 更多菜单
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                switch (value) {
+                  case 'unlock':
+                    _unlock(context, store, authStore.username!);
+                    break;
+                  case 'clear':
+                    _showClearConfirm(context, store);
+                    break;
+                  case 'logout':
+                    authStore.logout();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                if (store.items.any((item) => item.encrypted))
+                  const PopupMenuItem(value: 'unlock', child: Text('解锁旧记录')),
+                const PopupMenuItem(
+                  value: 'clear',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_sweep),
+                      SizedBox(width: 8),
+                      Text('清空历史'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout),
+                      SizedBox(width: 8),
+                      Text('退出登录'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: GlassSurface(
+                    blur: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.devices_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                store.isConnected ? '设备已连接' : '等待连接',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Text(
+                              '${store.items.length} 条记录',
+                              style: Theme.of(context).textTheme.labelMedium,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          Platform.isAndroid
+                              ? '在其他应用复制后，回到这里即可同步。'
+                              : '点按下方按钮，同步当前剪贴板。',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (store.syncNotice != null) Text(store.syncNotice!),
+                if (store.encryptionNotice != null)
+                  Text(store.encryptionNotice!),
+                if (store.needsUnlock)
+                  TextButton(
+                    onPressed: () =>
+                        _unlock(context, store, authStore.username!),
+                    child: const Text('部分旧记录需要原密码，点此解锁'),
+                  ),
+                Expanded(child: _buildBody(context, store)),
+              ],
             ),
           ),
-          // 刷新
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: store.isLoading ? null : () => store.refresh(),
-            tooltip: '刷新',
-          ),
-          // 更多菜单
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              switch (value) {
-                case 'unlock':
-                  _unlock(context, store, authStore.username!);
-                  break;
-                case 'clear':
-                  _showClearConfirm(context, store);
-                  break;
-                case 'logout':
-                  authStore.logout();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              if (store.items.any((item) => item.encrypted))
-                const PopupMenuItem(value: 'unlock', child: Text('解锁旧记录')),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_sweep),
-                    SizedBox(width: 8),
-                    Text('清空历史'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout),
-                    SizedBox(width: 8),
-                    Text('退出登录'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  Platform.isAndroid
-                      ? '在其他应用复制后，切回此应用自动同步。后台无法读取其他应用的剪贴板。'
-                      : '手机/平板请点按同步；后台不持续读取剪贴板。',
-                ),
-              ),
-              if (store.syncNotice != null) Text(store.syncNotice!),
-              if (store.encryptionNotice != null) Text(store.encryptionNotice!),
-              if (store.needsUnlock)
-                TextButton(
-                  onPressed: () => _unlock(context, store, authStore.username!),
-                  child: const Text('部分旧记录需要原密码，点此解锁'),
-                ),
-              Expanded(child: _buildBody(context, store)),
-            ],
-          ),
         ),
-      ),
-      // 悬浮按钮：同步当前剪贴板
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _syncClipboard(context, store),
-        icon: const Icon(Icons.content_paste_go),
-        label: const Text('同步剪贴板'),
-        tooltip: '读取并同步当前剪贴板内容到其他设备',
+        // 悬浮按钮：同步当前剪贴板
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => _syncClipboard(context, store),
+          icon: const Icon(Icons.content_paste_go),
+          label: const Text('同步剪贴板'),
+          tooltip: '读取并同步当前剪贴板内容到其他设备',
+        ),
       ),
     );
   }
@@ -136,7 +180,7 @@ class ClipboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '同账号记录会显示在这里；可点击下方按钮重试同步',
+              '复制一段文字，开始在设备间共享',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
@@ -149,7 +193,7 @@ class ClipboardScreen extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: () => store.refresh(),
       child: ListView.builder(
-        padding: const EdgeInsets.only(bottom: 88), // FAB 空间
+        padding: const EdgeInsets.only(bottom: 110), // FAB 空间
         itemCount: store.items.length,
         itemBuilder: (context, index) {
           final item = store.items[index];
