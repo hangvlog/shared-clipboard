@@ -30,11 +30,13 @@
 ```sh
 cd desktop
 cargo test --locked
-# macOS universal app
+# macOS universal DMG installer
 sh scripts/package-macos.sh
 # Windows 在 Visual Studio x64 开发环境构建
 cargo build --release --locked
 ```
+
+Mac 默认交付 `desktop/out/SharedClipboard-1.1.4-macos-universal.dmg`，同时支持 Apple Silicon 与 Intel。打开 DMG 后将 `Shared Clipboard.app` 拖入旁边的 `Applications`，从应用程序启动即可看到历史主窗口；安装后可推出磁盘映像。`desktop/out` 中的 `.app` 只是打包中间产物，不作为下载安装包。预览版仍为 ad-hoc 签名，尚未 Apple 公证。
 
 ```sh
 cd clipboard_app
