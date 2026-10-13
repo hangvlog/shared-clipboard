@@ -222,7 +222,9 @@ impl Runtime {
                     .to_string();
                 let token = logged["token"].as_str().ok_or("登录响应无效")?.to_string();
                 let password = v["encryption"].as_str().unwrap_or("");
-                let key = if password.is_empty() {
+                let key = if password.is_empty() && username == self.state.username {
+                    self.state.key.clone()
+                } else if password.is_empty() {
                     String::new()
                 } else {
                     crypto::derive(password, &username)
