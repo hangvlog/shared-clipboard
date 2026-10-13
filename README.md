@@ -36,7 +36,7 @@ sh scripts/package-macos.sh
 cargo build --release --locked
 ```
 
-Mac 默认交付 `desktop/out/SharedClipboard-1.1.4-macos-universal.dmg`，同时支持 Apple Silicon 与 Intel。打开 DMG 后将 `Shared Clipboard.app` 拖入旁边的 `Applications`，从应用程序启动即可看到历史主窗口；安装后可推出磁盘映像。`desktop/out` 中的 `.app` 只是打包中间产物，不作为下载安装包。预览版仍为 ad-hoc 签名，尚未 Apple 公证。
+Mac 默认交付 `desktop/out/SharedClipboard-1.1.5-macos-universal.dmg`，同时支持 Apple Silicon 与 Intel。打开 DMG 后将 `Shared Clipboard.app` 拖入旁边的 `Applications`，从应用程序启动即可看到历史主窗口；安装后可推出磁盘映像。`desktop/out` 中的 `.app` 只是打包中间产物，不作为下载安装包。预览版仍为 ad-hoc 签名，尚未 Apple 公证。
 
 ```sh
 cd clipboard_app
@@ -78,3 +78,7 @@ flutter build ios --release --no-codesign --dart-define=ENV=production
 Android 1.1.2 构建工具链固定为 Flutter 3.41.7 / Dart 3.11.5、JDK 17 与 NDK 28.2.13676358（锁定的 JNI 依赖要求）；使用官方构建入口和已锁定 pub 依赖。
 
 剪贴板原生依赖使用其已锁定包内 Cargokit 配置验证的签名预编译库（按源码哈希匹配）；配置在 `clipboard_app/cargokit_options.yaml`，不要求构建机再安装滚动 stable Rust。APK 本身仍在受控 Windows 本地编译与签名发布。
+
+## macOS 1.1.5 启动修复
+
+从 DMG、下载目录或 Applications 再次打开时，若已有同 bundle ID 程序运行，向该程序发送 reopen 并激活其主窗口；仅成功唤回后退出重复实例。关闭窗口后的再次打开也显示历史页面。此版本仅更新 macOS 安装包，Windows/Android 维持原发布。

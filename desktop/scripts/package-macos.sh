@@ -19,8 +19,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>共享剪贴板</string>
 <key>CFBundleExecutable</key><string>shared-clipboard</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.1.4</string>
-<key>CFBundleVersion</key><string>7</string>
+<key>CFBundleShortVersionString</key><string>1.1.5</string>
+<key>CFBundleVersion</key><string>8</string>
 <key>LSUIElement</key><false/>
 <key>LSMinimumSystemVersion</key><string>10.15</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -43,5 +43,5 @@ cat > "$STAGE/安装说明.txt" <<'INSTALL'
 当前为预览版，使用 ad-hoc 签名，尚未完成 Apple 公证。
 INSTALL
 hdiutil create -ov -format UDZO -fs HFS+ -volname "共享剪贴板" \
-  -srcfolder "$STAGE" "$OUT/SharedClipboard-1.1.4-macos-universal.dmg"
-hdiutil verify "$OUT/SharedClipboard-1.1.4-macos-universal.dmg"
+  -srcfolder "$STAGE" "$OUT/SharedClipboard-1.1.5-macos-universal.dmg"
+hdiutil verify "$OUT/SharedClipboard-1.1.5-macos-universal.dmg"

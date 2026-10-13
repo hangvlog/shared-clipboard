@@ -56,7 +56,19 @@ static ClipboardWindow *mainWindow;
 -(void)logout{sc_event(8,"");mainWindow.loggedIn=NO;[mainWindow clear];}
 -(void)quit{native_ws_close();[NSApp terminate:nil];}
 @end
-extern "C" int native_run(){@autoreleasepool{NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(bundle&&[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].count>1)return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
+static BOOL reopenExistingApplication(){
+ NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(!bundle)return NO;
+ for(NSRunningApplication *running in [NSRunningApplication runningApplicationsWithBundleIdentifier:bundle]){
+  if(running.processIdentifier==NSProcessInfo.processInfo.processIdentifier||running.terminated||!running.bundleURL)continue;
+  // Opening the running bundle sends a reopen event, including when its window
+  // was closed. Merely activating its process cannot reveal an ordered-out window.
+  NSError *error=nil;
+  NSRunningApplication *opened=[NSWorkspace.sharedWorkspace launchApplicationAtURL:running.bundleURL options:NSWorkspaceLaunchDefault configuration:@{} error:&error];
+  if(opened){[opened activateWithOptions:NSApplicationActivateAllWindows|NSApplicationActivateIgnoringOtherApps];return YES;}
+ }
+ return NO;
+}
+extern "C" int native_run(){@autoreleasepool{if(reopenExistingApplication())return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
 extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];[mainWindow status:s];});}
 extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{[mainWindow beginHistory];});}
 extern "C" void native_history_item(const char *id,const char *text){NSString *identifier=@(id),*s=@(text);dispatch_async(dispatch_get_main_queue(),^{[mainWindow addId:identifier label:s];});}
