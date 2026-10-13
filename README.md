@@ -36,7 +36,7 @@ sh scripts/package-macos.sh
 cargo build --release --locked
 ```
 
-Mac 默认交付 `desktop/out/SharedClipboard-1.1.5-macos-universal.dmg`，同时支持 Apple Silicon 与 Intel。打开 DMG 后将 `Shared Clipboard.app` 拖入旁边的 `Applications`，从应用程序启动即可看到历史主窗口；安装后可推出磁盘映像。`desktop/out` 中的 `.app` 只是打包中间产物，不作为下载安装包。预览版仍为 ad-hoc 签名，尚未 Apple 公证。
+Mac 默认交付 `desktop/out/SharedClipboard-1.1.6-macos-universal.dmg`，同时支持 Apple Silicon 与 Intel。打开 DMG 后将 `Shared Clipboard.app` 拖入旁边的 `Applications`，从应用程序启动即可看到历史主窗口；安装后可推出磁盘映像。`desktop/out` 中的 `.app` 只是打包中间产物，不作为下载安装包。预览版仍为 ad-hoc 签名，尚未 Apple 公证。
 
 ```sh
 cd clipboard_app
@@ -82,3 +82,9 @@ Android 1.1.2 构建工具链固定为 Flutter 3.41.7 / Dart 3.11.5、JDK 17 与
 ## macOS 1.1.5 启动修复
 
 从 DMG、下载目录或 Applications 再次打开时，若已有同 bundle ID 程序运行，向该程序发送 reopen 并激活其主窗口；仅成功唤回后退出重复实例。关闭窗口后的再次打开也显示历史页面。此版本仅更新 macOS 安装包，Windows/Android 维持原发布。
+
+## macOS 1.1.6 图标与首次打开
+
+补齐 Finder、Dock 与菜单栏的剪贴板同步图标，由 `desktop/scripts/render-macos-icon.swift` 的向量源生成全部尺寸，打包时写入 Resources 并设置 `CFBundleIconFile`。
+
+当前没有 Developer ID Application 证书与 Apple 公证凭据；预览 DMG 经浏览器下载后仍会被 Gatekeeper 拦截。本地 `codesign --verify` 仅验证包完整性，不代表通过系统信任检查。确认从 clawkit.chat 下载后，可在“系统设置 → 隐私与安全性”中对本应用选择“仍要打开”；无需关闭系统安全检查。受管理设备遵循管理员策略。正式免提示分发仍需 Developer ID 签名与公证，不能用图标或 ad-hoc 签名替代。

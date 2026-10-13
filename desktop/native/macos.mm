@@ -15,7 +15,10 @@ static ClipboardWindow *mainWindow;
 @implementation ClipboardApp
 -(void)applicationDidFinishLaunching:(NSNotification*)notice {
  [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
- tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];tray.button.title=@"▣";tray.button.toolTip=@"共享剪贴板";
+ tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];
+ NSImage *statusIcon=[[NSImage alloc]initWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"StatusIcon" ofType:@"png"]];
+ if(statusIcon){statusIcon.size=NSMakeSize(18,18);[statusIcon setTemplate:YES];tray.button.image=statusIcon;}else{tray.button.title=@"▣";}
+ tray.button.toolTip=@"共享剪贴板";
  NSMenu *menu=[NSMenu new];connection=[[NSMenuItem alloc]initWithTitle:@"正在启动" action:nil keyEquivalent:@""];[menu addItem:connection];
  for(NSArray *entry in @[@[@"登录 / 切换账号",NSStringFromSelector(@selector(login))],@[@"历史记录",NSStringFromSelector(@selector(showHistory))],@[@"解锁旧记录",NSStringFromSelector(@selector(unlock))],@[@"同步当前剪贴板",NSStringFromSelector(@selector(sync))],@[@"暂停 / 恢复",NSStringFromSelector(@selector(pause))],@[@"退出登录",NSStringFromSelector(@selector(logout))],@[@"退出",NSStringFromSelector(@selector(quit))]]){
   NSMenuItem *item=[[NSMenuItem alloc]initWithTitle:entry[0] action:NSSelectorFromString(entry[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
