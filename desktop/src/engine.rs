@@ -1,52 +1,12 @@
-use crate::{crypto, legacy, platform as p, state::State};
+use crate::endpoints::{endpoint, ws};
+use crate::{
+    content::{self, MAX_IMAGE},
+    crypto, legacy, platform as p,
+    state::State,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
-const MAX_IMAGE: usize = 2 * 1024 * 1024;
-fn api() -> String {
-    std::env::var("SHARED_CLIPBOARD_API")
-        .ok()
-        .filter(|s| s.starts_with("https://") || s.starts_with("http://127.0.0.1:"))
-        .unwrap_or("https://clawkit.chat/api".into())
-}
-fn ws() -> String {
-    std::env::var("SHARED_CLIPBOARD_WS")
-        .ok()
-        .filter(|s| s.starts_with("wss://") || s.starts_with("ws://127.0.0.1:"))
-        .unwrap_or("wss://clawkit.chat".into())
-        + "/socket.io/?EIO=4&transport=websocket"
-}
-fn endpoint(path: &str) -> String {
-    api() + path
-}
-fn copy(item: Value, keys: &[String]) -> Result<String, String> {
-    let item = legacy::decrypt(item, keys)?;
-    let kind = item["contentType"].as_str().unwrap_or("text");
-    let content = item["content"].as_str().unwrap_or("");
-    let source = if kind == "image" {
-        content
-    } else {
-        item["imageUrl"].as_str().unwrap_or("")
-    };
-    let image = if source.starts_with("data:image/") {
-        STANDARD
-            .decode(source.split_once(',').ok_or("图片格式无效")?.1)
-            .map_err(|_| "图片格式无效")?
-    } else if kind == "image" {
-        return Err("此图片为旧版云端链接，请从手机查看".into());
-    } else {
-        vec![]
-    };
-    if image.len() > MAX_IMAGE {
-        return Err("图片超过 2 MiB，请使用文件传输".into());
-    }
-    let text = if kind == "image" { "" } else { content };
-    p::write(text, &image)?;
-    Ok(fingerprint(text, &image))
-}
-fn fingerprint(text: &str, image: &[u8]) -> String {
-    crypto::hash(format!("{}:{}", crypto::hash(text.as_bytes()), crypto::hash(image)).as_bytes())
-}
 struct Runtime {
     state: State,
     legacy_keys: Vec<String>,
@@ -56,6 +16,7 @@ struct Runtime {
     delay: u64,
     last_hash: String,
     history: Vec<Value>,
+    history_visible: bool,
 }
 impl Runtime {
     fn restore_legacy_keys(&mut self) {
@@ -85,6 +46,7 @@ impl Runtime {
     fn failure(&mut self, error: String) {
         p::status(&error);
         if error.contains("登录已过期") {
+            p::session(false);
             self.state.token.clear();
             self.state.key.clear();
             self.legacy_keys.clear();
@@ -109,6 +71,9 @@ impl Runtime {
             ));
             self.state.last_id = item["id"].as_str().unwrap_or("").into();
             self.state.acknowledge()?;
+            if self.history_visible {
+                crate::events::send(5, String::new());
+            }
         }
         Ok(())
     }
@@ -123,7 +88,7 @@ impl Runtime {
         if text.len() > 100000 || image.len() > MAX_IMAGE {
             return Err("内容过大：文本上限 100KB，图片上限 2MiB".into());
         }
-        let hash = fingerprint(&text, &image);
+        let hash = content::fingerprint(&text, &image);
         if hash == self.last_hash {
             return Ok(());
         }
@@ -201,9 +166,12 @@ impl Runtime {
             return Ok(());
         }
         if item["deviceId"] != self.state.device {
-            self.last_hash = copy(item.clone(), &self.legacy_keys)?;
+            self.last_hash = content::copy(item.clone(), &self.legacy_keys)?;
         }
         self.state.last_id = id.into();
+        if self.history_visible {
+            crate::events::send(5, String::new());
+        }
         self.state.save()
     }
     fn event(&mut self, kind: i32, data: String) -> Result<(), String> {
@@ -243,6 +211,7 @@ impl Runtime {
                 crate::events::discard_clipboard();
                 self.last_hash.clear();
                 self.history.clear();
+                p::session(true);
                 self.reconnect();
             }
             2 => self.capture()?,
@@ -256,6 +225,9 @@ impl Runtime {
                 }
             }
             5 => {
+                if self.state.token.is_empty() {
+                    return Err("请先登录".into());
+                }
                 self.restore_legacy_keys();
                 let rows = p::request(
                     "GET",
@@ -283,15 +255,18 @@ impl Runtime {
                         } else {
                             v.clone()
                         };
-                        legacy::summary(
-                            &legacy::decrypt(full, &self.legacy_keys).unwrap_or(v.clone()),
+                        (
+                            v["id"].as_str().unwrap_or("").to_string(),
+                            legacy::summary(
+                                &legacy::decrypt(full, &self.legacy_keys).unwrap_or(v.clone()),
+                            ),
                         )
                     })
                     .collect::<Vec<_>>();
                 p::history(&labels);
             }
             6 => {
-                if let Some(item) = data.parse::<usize>().ok().and_then(|i| self.history.get(i)) {
+                if let Some(item) = content::selected(&self.history, &data) {
                     let full = p::request(
                         "GET",
                         &endpoint(&format!(
@@ -301,7 +276,8 @@ impl Runtime {
                         &self.state.token,
                         &Value::Null,
                     )?;
-                    self.last_hash = copy(full, &self.legacy_keys)?;
+                    self.last_hash = content::copy(full, &self.legacy_keys)?;
+                    p::status("已复制到剪贴板");
                 }
             }
             7 => {
@@ -325,6 +301,7 @@ impl Runtime {
                 self.legacy_keys.clear();
                 self.last_hash.clear();
                 self.history.clear();
+                p::session(false);
                 p::status("未登录");
             }
             9 => self.history.clear(),
@@ -337,9 +314,29 @@ impl Runtime {
                     self.state.key = crypto::derive(&data, &self.state.username);
                     legacy::add(&mut self.legacy_keys, self.state.key.clone());
                     self.state.save()?;
-                    p::status("已添加旧记录密码，请重新打开历史记录");
+                    p::status("已添加旧记录密码");
+                    if self.history_visible {
+                        crate::events::send(5, String::new());
+                    }
                 }
             }
+            12 => {
+                if let Some(item) = content::selected(&self.history, &data) {
+                    let id = item["id"].as_str().unwrap_or("");
+                    let result = p::request(
+                        "GET",
+                        &endpoint(&format!("/clipboard/item/{id}")),
+                        &self.state.token,
+                        &Value::Null,
+                    )
+                    .and_then(|item| content::decode(item, &self.legacy_keys));
+                    match result {
+                        Ok((text, image)) => p::detail(id, &text, &image, true),
+                        Err(e) => p::detail(id, &e, &[], false),
+                    }
+                }
+            }
+            13 => self.history_visible = data == "1",
             _ => {}
         }
         Ok(())
@@ -357,7 +354,9 @@ pub fn run() {
         delay: 1,
         last_hash: String::new(),
         history: vec![],
+        history_visible: false,
     };
+    p::session(!r.state.token.is_empty());
     r.reconnect();
     if r.state.token.is_empty() {
         p::status("请登录同一个账号")

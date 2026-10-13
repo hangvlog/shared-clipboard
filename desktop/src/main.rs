@@ -1,5 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod content;
 mod crypto;
+mod endpoints;
 mod engine;
 mod events;
 mod legacy;

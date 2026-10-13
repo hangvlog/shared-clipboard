@@ -23,7 +23,7 @@ fn queue() -> &'static (Mutex<Inbox>, Condvar) {
 pub fn send(kind: i32, data: String) {
     let (lock, signal) = queue();
     let mut inbox = lock.lock().unwrap();
-    if kind == 2 && inbox.rows.iter().any(|(k, _)| *k == 2) {
+    if (kind == 2 || kind == 5) && inbox.rows.iter().any(|(k, _)| *k == kind) {
         return;
     }
     if data.len() > 8_000_000 || inbox.bytes + data.len() > 8_000_000 || inbox.rows.len() >= 32 {

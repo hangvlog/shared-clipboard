@@ -60,7 +60,7 @@ static NSMutableArray<NSString*> *history;
 extern "C" int native_run(){@autoreleasepool{NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(bundle&&[NSRunningApplication runningApplicationsWithBundleIdentifier:bundle].count>1)return 0;NSApplication *app=[NSApplication sharedApplication];ClipboardApp *delegate=[ClipboardApp new];app.delegate=delegate;[app run];return 0;}}
 extern "C" void native_status(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{connection.title=s;tray.button.toolTip=[@"共享剪贴板 · " stringByAppendingString:s];if([s isEqualToString:@"请登录同一个账号"])[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(login) withObject:nil waitUntilDone:NO];});}
 extern "C" void native_history_begin(){dispatch_async(dispatch_get_main_queue(),^{history=[NSMutableArray new];});}
-extern "C" void native_history_item(const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{[history addObject:s];});}
+extern "C" void native_history_item(const char*, const char *text){NSString *s=@(text);dispatch_async(dispatch_get_main_queue(),^{[history addObject:s];});}
 extern "C" void native_history_end(){dispatch_async(dispatch_get_main_queue(),^{[(ClipboardApp*)NSApp.delegate performSelectorOnMainThread:@selector(presentHistory) withObject:nil waitUntilDone:NO];});}
 @implementation ClipboardApp (History)
 -(void)presentHistory {
@@ -104,3 +104,6 @@ extern "C" int native_clipboard_write(const char *text,const unsigned char *imag
 }}
 
 extern "C" void native_clipboard_reset(){lastChange=NSPasteboard.generalPasteboard.changeCount;}
+
+extern "C" void native_detail(const char*,const char*,const unsigned char*,size_t,int){}
+extern "C" void native_session(int){}

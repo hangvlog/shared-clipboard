@@ -22,8 +22,16 @@ unsafe extern "C" {
     fn native_clipboard_write(text: *const c_char, image: *const u8, length: usize) -> c_int;
     fn native_free(ptr: *mut c_void);
     fn native_history_begin();
-    fn native_history_item(text: *const c_char);
+    fn native_history_item(id: *const c_char, text: *const c_char);
     fn native_history_end();
+    fn native_detail(
+        id: *const c_char,
+        text: *const c_char,
+        image: *const u8,
+        length: usize,
+        success: c_int,
+    );
+    fn native_session(logged_in: c_int);
 }
 fn c(s: &str) -> CString {
     CString::new(s.replace('\0', "")).unwrap()
@@ -112,11 +120,11 @@ pub fn write(text: &str, image: &[u8]) -> Result<(), String> {
         Err("无法写入剪贴板".into())
     }
 }
-pub fn history(rows: &[String]) {
+pub fn history(rows: &[(String, String)]) {
     unsafe {
         native_history_begin();
-        for s in rows {
-            native_history_item(c(s).as_ptr())
+        for (id, s) in rows {
+            native_history_item(c(id).as_ptr(), c(s).as_ptr())
         }
         native_history_end();
     }
@@ -134,5 +142,23 @@ pub fn data_dir() -> Result<std::path::PathBuf, String> {
 pub fn reset_clipboard() {
     unsafe {
         native_clipboard_reset();
+    }
+}
+
+pub fn detail(id: &str, text: &str, image: &[u8], success: bool) {
+    unsafe {
+        native_detail(
+            c(id).as_ptr(),
+            c(text).as_ptr(),
+            image.as_ptr(),
+            image.len(),
+            success as c_int,
+        );
+    }
+}
+
+pub fn session(logged_in: bool) {
+    unsafe {
+        native_session(logged_in as c_int);
     }
 }

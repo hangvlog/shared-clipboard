@@ -18,6 +18,7 @@ fn main() {
         build
             .files([
                 "native/windows.cpp",
+                "native/windows_ui.cpp",
                 "native/windows_network.cpp",
                 "native/windows_clipboard.cpp",
             ])
@@ -27,7 +28,7 @@ fn main() {
             .define("_UNICODE", None)
             .define("WIN32_LEAN_AND_MEAN", None);
         for lib in [
-            "user32", "shell32", "winhttp", "crypt32", "ole32", "gdiplus", "gdi32",
+            "user32", "shell32", "winhttp", "crypt32", "ole32", "gdiplus", "gdi32", "uxtheme",
         ] {
             println!("cargo:rustc-link-lib={lib}");
         }
