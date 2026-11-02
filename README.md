@@ -114,3 +114,8 @@ $password | & "D:\Office_Software\SharedClipboard\shared-clipboard.exe" login 15
 ```
 
 密码只从标准输入读取，不出现在参数和进程列表；输出 JSON（`signed_in/username/renewable/expires_in`），不含令牌。登录与界面登录一样换取可续期的 `shared-clipboard` 会话并写入 Keychain / DPAPI，同时撤销被替换的旧会话。正在运行的程序会立即接管：macOS 通过分布式通知，Windows 通过监听会话目录（可跨 SSH 登录会话）。`logout` 撤销续期凭据并退出登录。Windows 的 DPAPI 绑定当前用户，需以桌面同一账号运行命令。
+
+## 桌面 1.1.11 开机自启
+
+- Windows：安装包写入当前用户启动项 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SharedClipboard`（`"<安装目录>\shared-clipboard.exe" --background`），开机后只在托盘运行；卸载时删除。可在任务管理器“启动应用”中关闭。
+- macOS：从“应用程序”文件夹首次启动时注册登录项（macOS 13+ 用 `SMAppService`，更早版本写 `~/Library/LaunchAgents/chat.clawkit.shared-clipboard.plist`），只注册一次；之后在“系统设置 → 通用 → 登录项”中关闭不会被重新打开。作为登录项启动时只在菜单栏运行，不弹主窗口。

@@ -92,7 +92,10 @@ extern "C" int native_run(){
  mainWindow=CreateWindowExW(0,L"SharedClipboardNative",L"共享剪贴板",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,1000,680,nullptr,nullptr,instance,nullptr);
  if(!mainWindow||!AddClipboardFormatListener(mainWindow))return 1;
  lastRevision=GetClipboardSequenceNumber();tray.hWnd=mainWindow;tray.uID=1;tray.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP;tray.uCallbackMessage=WM_APP+1;tray.hIcon=cls.hIcon;wcscpy_s(tray.szTip,L"共享剪贴板");Shell_NotifyIconW(NIM_ADD,&tray);
- historyVisible=true;SetWindowPos(mainWindow,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_SHOWWINDOW);UpdateWindow(mainWindow);sc_start();native_watch_session();sc_event(13,"1");
+ // Sign-in autostart (installer Run entry) stays in the tray; any other launch opens the window.
+ bool background=wcsstr(GetCommandLineW(),L"--background")!=nullptr;historyVisible=!background;
+ if(!background){SetWindowPos(mainWindow,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_SHOWWINDOW);UpdateWindow(mainWindow);}
+ sc_start();native_watch_session();sc_event(13,background?"0":"1");
  MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){if(dialog&&IsDialogMessageW(dialog,&msg))continue;if(IsDialogMessageW(mainWindow,&msg))continue;TranslateMessage(&msg);DispatchMessageW(&msg);}CloseHandle(singleton);return 0;
 }
 extern "C" void native_status(const char* text){PostMessageW(mainWindow,WM_APP+2,0,(LPARAM)new std::wstring(ui::wide(text)));}

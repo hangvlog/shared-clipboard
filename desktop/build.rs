@@ -12,7 +12,7 @@ fn main() {
             ])
             .flag("-std=c++17")
             .flag("-fobjc-arc");
-        for framework in ["AppKit", "Foundation", "Security", "QuartzCore"] {
+        for framework in ["AppKit", "Foundation", "Security", "QuartzCore", "ServiceManagement"] {
             println!("cargo:rustc-link-lib=framework={framework}");
         }
     } else if os == "windows" {

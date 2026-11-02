@@ -13,6 +13,9 @@ const USAGE: &str = "用法: shared-clipboard login <账号>   # 从标准输入
 /// `None` when started without a command, i.e. as the desktop app.
 pub fn run(args: &[String]) -> Option<i32> {
     let command = args.first()?.as_str();
+    if !matches!(command, "login" | "status" | "logout" | "help" | "--help" | "-h") {
+        return None;
+    }
     platform::attach_console();
     let result = match command {
         "login" => match args.get(1) {

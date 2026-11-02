@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include "bridge.h"
 #import "macos_ui.h"
 #include <stdlib.h>
@@ -11,8 +12,26 @@ static ClipboardWindow *mainWindow;
 @interface ClipboardApp : NSObject<NSApplicationDelegate>
 @property NSTimer *timer;
 @property BOOL showingLogin;
+@property BOOL launchedAtLogin;
 @end
+// Offer start-at-login once from /Applications; afterwards the user's choice in System Settings wins.
+static void offerLoginItem(){
+ NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;NSString *bundle=NSBundle.mainBundle.bundlePath;
+ if([defaults boolForKey:@"loginItemOffered"]||!([bundle hasPrefix:@"/Applications/"]||[bundle hasPrefix:[NSHomeDirectory() stringByAppendingPathComponent:@"Applications/"]]))return;
+ BOOL done=NO;
+ if(@available(macOS 13.0,*)){SMAppService *service=SMAppService.mainAppService;done=service.status==SMAppServiceStatusEnabled||[service registerAndReturnError:nil];}
+ else{
+  NSString *dir=[NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents"];[NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+  NSDictionary *agent=@{@"Label":@"chat.clawkit.shared-clipboard",@"ProgramArguments":@[NSBundle.mainBundle.executablePath,@"--background"],@"RunAtLoad":@YES};
+  done=[agent writeToFile:[dir stringByAppendingPathComponent:@"chat.clawkit.shared-clipboard.plist"] atomically:YES];
+ }
+ if(done)[defaults setBool:YES forKey:@"loginItemOffered"];
+}
 @implementation ClipboardApp
+-(void)applicationWillFinishLaunching:(NSNotification*)notice {
+ NSAppleEventDescriptor *event=NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
+ self.launchedAtLogin=[NSProcessInfo.processInfo.arguments containsObject:@"--background"]||(event.eventID==kAEOpenApplication&&[event paramDescriptorForKeyword:keyAEPropData].enumCodeValue==keyAELaunchedAsLogInItem);
+}
 -(void)applicationDidFinishLaunching:(NSNotification*)notice {
  [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
  tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];
@@ -29,7 +48,8 @@ static ClipboardWindow *mainWindow;
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(sleep:) name:NSWorkspaceWillSleepNotification object:nil];
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(wake:) name:NSWorkspaceDidWakeNotification object:nil];
  [[NSDistributedNotificationCenter defaultCenter]addObserver:self selector:@selector(sessionChanged:) name:@"chat.clawkit.shared-clipboard.session" object:nil suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
- mainWindow=[ClipboardWindow new];sc_start();[mainWindow open];
+ mainWindow=[ClipboardWindow new];sc_start();if(!self.launchedAtLogin)[mainWindow open];
+ offerLoginItem();
  if([NSProcessInfo.processInfo.arguments containsObject:@"--login"])[self login];
  if([NSProcessInfo.processInfo.arguments containsObject:@"--history"])sc_event(5,"");
 }
