@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
+import 'env_config.dart';
 
 enum MobileEvent {
   initialized,
@@ -10,6 +11,7 @@ enum MobileEvent {
   autoSyncFailed,
   historyFailed,
   readFailed,
+  authExpired,
 }
 
 /// Only fixed event names leave the device: never content, identity or exceptions.
@@ -48,12 +50,13 @@ class MobileDiagnostics {
               'message': event.name,
               'level':
                   event.name.endsWith('Failed') ||
-                      event == MobileEvent.accountConfigUnavailable
+                      event == MobileEvent.accountConfigUnavailable ||
+                      event == MobileEvent.authExpired
                   ? 'warn'
                   : 'info',
               'type': 'custom',
               'page': '/clipboard',
-              'appVersion': '1.1.1',
+              'appVersion': EnvConfig.appVersion,
               'clientTime': now.millisecondsSinceEpoch,
             }),
           )

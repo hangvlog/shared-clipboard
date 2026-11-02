@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:clipboard_app/widgets/glass_surface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clipboard_app/main.dart';
+import 'package:clipboard_app/screens/login_screen.dart';
+import 'package:clipboard_app/stores/auth_store.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:clipboard_app/widgets/clipboard_detail.dart';
 import 'package:clipboard_app/widgets/clipboard_item_tile.dart';
 import 'package:clipboard_core/clipboard_core.dart';
@@ -122,4 +126,37 @@ void main() {
       );
     });
   }
+  testWidgets('Expired session returns to login with notice and account', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'auth_token': 'expired',
+      'auth_username': 'hang',
+      'auth_nickname': 'hang',
+      'auth_last_login': '15700000000',
+    });
+    final auth = AuthStore();
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: auth,
+        child: MaterialApp(
+          home: Consumer<AuthStore>(
+            builder: (_, store, _) =>
+                store.isLoggedIn ? const Text('history') : const LoginScreen(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('history'), findsOneWidget);
+    await auth.expireSession();
+    await tester.pumpAndSettle();
+    expect(find.text('登录已过期，请重新登录'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '15700000000'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('auth_token'), isNull);
+    await auth.logout();
+    await tester.pumpAndSettle();
+    expect(find.text('登录已过期，请重新登录'), findsNothing);
+  });
 }

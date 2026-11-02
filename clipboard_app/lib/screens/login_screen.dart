@@ -16,6 +16,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   String? _errorMessage;
+  bool _prefilled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final lastLogin = context.watch<AuthStore>().lastLogin;
+    if (!_prefilled && lastLogin != null) {
+      _prefilled = true;
+      if (_usernameController.text.isEmpty) {
+        _usernameController.text = lastLogin;
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -116,6 +129,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                         ),
                         const SizedBox(height: 8),
+
+                        if (_errorMessage == null &&
+                            authStore.sessionNotice != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              authStore.sessionNotice!,
+                              style: TextStyle(color: colorScheme.error),
+                            ),
+                          ),
 
                         // 错误信息
                         if (_errorMessage != null)

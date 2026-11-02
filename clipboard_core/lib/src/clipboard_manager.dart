@@ -17,6 +17,9 @@ class ClipboardManager {
   String? encryptionNotice;
   final Future<void> Function(Future<void> Function())? clipboardWrite;
   final bool autoCopyRemote;
+
+  /// Invoked when the server rejects the token; history must not be shown as current.
+  final void Function()? onAuthExpired;
   bool _accountConfigLoaded = false;
   int _generation = 0;
   int _syncRequest = 0;
@@ -52,6 +55,7 @@ class ClipboardManager {
     this.accountUsername,
     this.clipboardWrite,
     this.autoCopyRemote = true,
+    this.onAuthExpired,
   }) {
     _deviceInfo = DeviceInfo(
       deviceId: platform.getDeviceId(),
@@ -60,7 +64,10 @@ class ClipboardManager {
       platform: platform.getPlatformName(),
     );
 
-    _apiClient = ClipboardApiClient(config: config);
+    _apiClient = ClipboardApiClient(
+      config: config,
+      onUnauthorized: _handleUnauthorized,
+    );
     _reader = ClipboardReader(_apiClient, _cryptoService);
     _syncService = ClipboardSyncService(
       config: config,
@@ -112,6 +119,15 @@ class ClipboardManager {
         encryptionNotice = '部分旧记录的解锁配置未能读取，可刷新重试；新内容可正常同步';
       }
     }
+  }
+
+  void _handleUnauthorized() {
+    if (_disposed) return;
+    _generation++;
+    _syncService.disconnect();
+    _items = [];
+    _itemsController.add(_items);
+    onAuthExpired?.call();
   }
 
   Future<void> _write(Future<void> Function() action) async {

@@ -306,6 +306,63 @@ void main() {
       expect(calls, 2);
     },
   );
+  test(
+    'Expired login stops showing cached history and asks to sign in again',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        request.response.statusCode = 401;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'detail': '未登录或登录已过期'}));
+        await request.response.close();
+      });
+      final platform = MemoryPlatform()
+        ..cached = [
+          ClipboardItem(
+            id: 'cached',
+            content: 'cipher',
+            contentType: 'text',
+            deviceId: 'mac',
+            deviceName: 'Mac',
+            createdAt: '2026-10-12T00:00:00Z',
+            encrypted: true,
+          ),
+        ];
+      final base = 'http://127.0.0.1:${server.port}';
+      var expired = 0;
+      final emitted = <List<ClipboardItem>>[];
+      final manager = ClipboardManager(
+        config: ClipboardConfig(
+          apiBaseUrl: base,
+          wsBaseUrl: base,
+          token: 'old',
+        ),
+        platform: platform,
+        accountUsername: 'fixture',
+        autoCopyRemote: false,
+        onAuthExpired: () => expired++,
+      );
+      final sub = manager.itemsStream.listen(emitted.add);
+      try {
+        await manager.init();
+        await Future<void>.delayed(Duration.zero);
+        expect(requests, greaterThan(0));
+        expect(expired, greaterThan(0));
+        expect(manager.items, isEmpty);
+        expect(emitted.last, isEmpty);
+        await expectLater(
+          manager.syncWithServer(),
+          throwsA(isA<AuthExpiredException>()),
+        );
+      } finally {
+        await sub.cancel();
+        manager.dispose();
+        await server.close(force: true);
+      }
+    },
+  );
   test('Shared native/Dart encryption protocol vector', () async {
     final crypto = ClipboardCryptoService();
     await crypto.deriveKeyFromUsername('cross-platform-password', 'fixture-a');

@@ -24,8 +24,22 @@ class ClipboardApiClient {
   final ClipboardConfig config;
   final http.Client _client;
 
-  ClipboardApiClient({required this.config, http.Client? client})
-    : _client = client ?? http.Client();
+  /// Called once per rejected request when the server no longer accepts the token.
+  final void Function()? onUnauthorized;
+
+  ClipboardApiClient({
+    required this.config,
+    http.Client? client,
+    this.onUnauthorized,
+  }) : _client = client ?? http.Client();
+
+  Map<String, dynamic> _decode(http.Response response) {
+    if (response.statusCode == 401) {
+      onUnauthorized?.call();
+      throw AuthExpiredException();
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -41,8 +55,10 @@ class ClipboardApiClient {
           headers: _headers,
         )
         .timeout(const Duration(seconds: 10));
-    if (response.statusCode != 200) throw ApiException('读取账号加密配置失败');
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 && response.statusCode != 401) {
+      throw ApiException('读取账号加密配置失败');
+    }
+    final body = _decode(response);
     if (body['code'] != 1 && body['code'] != 200) {
       throw ApiException('读取账号加密配置失败');
     }
@@ -77,7 +93,7 @@ class ClipboardApiClient {
     final response = await _client
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 20));
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
 
     if (body['code'] == 1 || body['code'] == 200) {
       final list = body['data'] as List;
@@ -98,7 +114,7 @@ class ClipboardApiClient {
           headers: _headers,
         )
         .timeout(const Duration(seconds: 20));
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
     if (body['code'] == 1 || body['code'] == 200) {
       return ClipboardItem.fromJson(body['data'] as Map<String, dynamic>);
     }
@@ -135,7 +151,7 @@ class ClipboardApiClient {
       headers: _headers,
       body: jsonEncode(payload),
     );
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
 
     if (body['code'] == 1 || body['code'] == 200) {
       return ClipboardItem.fromJson(body['data'] as Map<String, dynamic>);
@@ -158,7 +174,7 @@ class ClipboardApiClient {
     final response = await _client
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 20));
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
 
     if (body['code'] == 1 || body['code'] == 200) {
       final data = body['data'] as Map<String, dynamic>;
@@ -180,7 +196,7 @@ class ClipboardApiClient {
   Future<void> deleteItem(String itemId) async {
     final uri = Uri.parse('${config.apiBaseUrl}/clipboard/delete/$itemId');
     final response = await _client.delete(uri, headers: _headers);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
 
     if (body['code'] != 1 && body['code'] != 200) {
       throw ApiException(body['message'] as String? ?? '删除失败');
@@ -191,7 +207,7 @@ class ClipboardApiClient {
   Future<void> clearHistory() async {
     final uri = Uri.parse('${config.apiBaseUrl}/clipboard/clear');
     final response = await _client.delete(uri, headers: _headers);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = _decode(response);
 
     if (body['code'] != 1 && body['code'] != 200) {
       throw ApiException(body['message'] as String? ?? '清空失败');
@@ -211,4 +227,9 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException: $message';
+}
+
+/// The account token expired or was revoked; the user must sign in again.
+class AuthExpiredException extends ApiException {
+  AuthExpiredException() : super('登录已过期，请重新登录');
 }

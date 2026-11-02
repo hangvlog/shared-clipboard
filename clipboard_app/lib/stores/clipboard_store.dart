@@ -32,6 +32,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   );
   String? get encryptionNotice => _manager?.encryptionNotice;
   String? _token;
+  AuthStore? _auth;
   int _generation = 0;
   bool _disposed = false;
   bool get _background =>
@@ -85,6 +86,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 当 AuthStore 变化时调用
   void updateAuth(AuthStore authStore) {
+    _auth = authStore;
     if (_token == authStore.token) return;
     _cleanup();
     _token = authStore.token;
@@ -111,6 +113,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
         platform: platform,
         accountUsername: username,
         autoCopyRemote: false,
+        onAuthExpired: () => _authExpired(generation),
         clipboardWrite: (write) async {
           if (_autoSync != null) {
             await _autoSync!.suppressDuring(write);
@@ -176,6 +179,13 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
       }
     }
+  }
+
+  void _authExpired(int generation) {
+    if (_disposed || generation != _generation) return;
+    unawaited(_diagnostics.report(MobileEvent.authExpired));
+    _autoSync?.pause();
+    unawaited(_auth?.expireSession());
   }
 
   /// 手动同步剪贴板（用户主动触发）
@@ -275,7 +285,9 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
       await _manager?.restoreAccountEncryption();
       await _manager?.syncWithServer();
     } catch (e) {
-      unawaited(_diagnostics.report(MobileEvent.historyFailed));
+      if (e is! AuthExpiredException) {
+        unawaited(_diagnostics.report(MobileEvent.historyFailed));
+      }
     } finally {
       _isLoading = false;
       if (!_disposed) notifyListeners();
