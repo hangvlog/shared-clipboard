@@ -6,6 +6,7 @@ mod engine;
 mod events;
 mod legacy;
 mod platform;
+mod session;
 mod state;
 mod telemetry;
 use std::{

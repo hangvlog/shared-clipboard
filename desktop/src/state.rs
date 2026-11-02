@@ -10,6 +10,10 @@ pub struct Pending {
 #[serde(default)]
 pub struct State {
     pub token: String,
+    /// Device-bound `shared-clipboard` session credential; empty for legacy `/auth/login` tokens.
+    pub refresh_token: String,
+    /// Access-token expiry, Unix seconds.
+    pub expires_at: u64,
     pub username: String,
     pub key: String,
     pub device: String,
@@ -22,6 +26,8 @@ impl Default for State {
     fn default() -> Self {
         Self {
             token: String::new(),
+            refresh_token: String::new(),
+            expires_at: 0,
             username: String::new(),
             key: String::new(),
             device: crypto::random_id(),

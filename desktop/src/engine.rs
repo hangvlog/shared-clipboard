@@ -1,7 +1,9 @@
+mod auth;
 use crate::endpoints::{endpoint, ws};
 use crate::{
     content::{self, MAX_IMAGE},
     crypto, legacy, platform as p,
+    session::EXPIRED,
     state::State,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -17,15 +19,12 @@ struct Runtime {
     last_hash: String,
     history: Vec<Value>,
     history_visible: bool,
+    renew_after: Instant,
+    socket_renewed: bool,
 }
 impl Runtime {
     fn restore_legacy_keys(&mut self) {
-        if let Ok(data) = p::request(
-            "GET",
-            &endpoint("/auth/encryption-salt"),
-            &self.state.token,
-            &Value::Null,
-        ) {
+        if let Ok(data) = self.call("GET", "/auth/encryption-salt", &Value::Null) {
             if let Ok(Some(key)) = legacy::account_key(&data, &self.state.username) {
                 legacy::add(&mut self.legacy_keys, key);
             }
@@ -39,15 +38,22 @@ impl Runtime {
         if self.state.token.is_empty() || self.state.paused {
             return;
         }
+        if let Err(e) = self.ensure_fresh(false) {
+            if e == EXPIRED {
+                return self.failure(e);
+            }
+        }
         p::status("正在连接");
         p::ws_open(&ws(), self.generation);
         self.retry = Instant::now() + Duration::from_secs(35);
     }
     fn failure(&mut self, error: String) {
         p::status(&error);
-        if error.contains("登录已过期") {
+        if error == EXPIRED {
             p::session(false);
             self.state.token.clear();
+            self.state.refresh_token.clear();
+            self.state.expires_at = 0;
             self.state.key.clear();
             self.legacy_keys.clear();
             self.state.clear_pending();
@@ -59,12 +65,8 @@ impl Runtime {
     }
     fn flush(&mut self) -> Result<(), String> {
         while self.connected && !self.state.paused && !self.state.pending.is_empty() {
-            let item = p::request(
-                "POST",
-                &endpoint("/clipboard/add"),
-                &self.state.token,
-                &self.state.first()?,
-            )?;
+            let first = self.state.first()?;
+            let item = self.call("POST", "/clipboard/add", &first)?;
             p::ws_send(&format!(
                 "42{}",
                 json!(["clipboard_sync",{"item":{"id":item["id"]}}])
@@ -135,20 +137,16 @@ impl Runtime {
         } else if let Some(ack) = packet.strip_prefix("431") {
             let ack: Value = serde_json::from_str(ack).map_err(|_| "注册失败")?;
             if ack[0]["success"] != true {
-                return Err("登录已过期，请重新登录".into());
+                return self.socket_rejected();
             }
+            self.socket_renewed = false;
             self.restore_legacy_keys();
             self.connected = true;
             self.delay = 1;
             p::status("已连接 · 自动同步");
             self.flush()?;
             // Fetch only the latest record after reconnect. History stays server-side.
-            let rows = p::request(
-                "GET",
-                &endpoint("/clipboard/history?limit=1"),
-                &self.state.token,
-                &Value::Null,
-            )?;
+            let rows = self.call("GET", "/clipboard/history?limit=1", &Value::Null)?;
             if let Some(item) = rows.as_array().and_then(|a| a.first()) {
                 self.receive(item.clone())?;
             }
@@ -176,44 +174,7 @@ impl Runtime {
     }
     fn event(&mut self, kind: i32, data: String) -> Result<(), String> {
         match kind {
-            1 => {
-                let v: Value = serde_json::from_str(&data).map_err(|_| "登录输入无效")?;
-                let logged = p::request(
-                    "POST",
-                    &endpoint("/auth/login"),
-                    "",
-                    &json!({"username":v["username"],"password":v["password"]}),
-                )?;
-                let username = logged["user"]["username"]
-                    .as_str()
-                    .ok_or("登录响应无效")?
-                    .to_string();
-                let token = logged["token"].as_str().ok_or("登录响应无效")?.to_string();
-                let password = v["encryption"].as_str().unwrap_or("");
-                let key = if password.is_empty() && username == self.state.username {
-                    self.state.key.clone()
-                } else if password.is_empty() {
-                    String::new()
-                } else {
-                    crypto::derive(password, &username)
-                };
-                self.state.clear_pending();
-                self.state = State {
-                    username,
-                    token,
-                    key,
-                    device: self.state.device.clone(),
-                    ..State::default()
-                };
-                self.legacy_keys = legacy::keys(&self.state);
-                self.state.save()?;
-                p::reset_clipboard();
-                crate::events::discard_clipboard();
-                self.last_hash.clear();
-                self.history.clear();
-                p::session(true);
-                self.reconnect();
-            }
+            1 => self.sign_in(&data)?,
             2 => self.capture()?,
             3 => self.socket(&data)?,
             4 => {
@@ -229,10 +190,9 @@ impl Runtime {
                     return Err("请先登录".into());
                 }
                 self.restore_legacy_keys();
-                let rows = p::request(
+                let rows = self.call(
                     "GET",
-                    &endpoint("/clipboard/history?limit=50&metadata_only=true"),
-                    &self.state.token,
+                    "/clipboard/history?limit=50&metadata_only=true",
                     &Value::Null,
                 )?;
                 self.history = rows.as_array().cloned().unwrap_or_default();
@@ -267,15 +227,8 @@ impl Runtime {
             }
             6 => {
                 if let Some(item) = content::selected(&self.history, &data) {
-                    let full = p::request(
-                        "GET",
-                        &endpoint(&format!(
-                            "/clipboard/item/{}",
-                            item["id"].as_str().unwrap_or("")
-                        )),
-                        &self.state.token,
-                        &Value::Null,
-                    )?;
+                    let path = format!("/clipboard/item/{}", item["id"].as_str().unwrap_or(""));
+                    let full = self.call("GET", &path, &Value::Null)?;
                     self.last_hash = content::copy(full, &self.legacy_keys)?;
                     p::status("已复制到剪贴板");
                 }
@@ -288,22 +241,7 @@ impl Runtime {
                     p::status("同步已暂停")
                 }
             }
-            8 => {
-                self.generation += 1;
-                p::ws_close();
-                self.connected = false;
-                self.state.clear_pending();
-                self.state = State {
-                    device: self.state.device.clone(),
-                    ..State::default()
-                };
-                self.state.save()?;
-                self.legacy_keys.clear();
-                self.last_hash.clear();
-                self.history.clear();
-                p::session(false);
-                p::status("未登录");
-            }
+            8 => self.sign_out()?,
             9 => self.history.clear(),
             10 => self.reconnect(),
             11 => {
@@ -322,14 +260,11 @@ impl Runtime {
             }
             12 => {
                 if let Some(item) = content::selected(&self.history, &data) {
-                    let id = item["id"].as_str().unwrap_or("");
-                    let result = p::request(
-                        "GET",
-                        &endpoint(&format!("/clipboard/item/{id}")),
-                        &self.state.token,
-                        &Value::Null,
-                    )
-                    .and_then(|item| content::decode(item, &self.legacy_keys));
+                    let id = item["id"].as_str().unwrap_or("").to_string();
+                    let result = self
+                        .call("GET", &format!("/clipboard/item/{id}"), &Value::Null)
+                        .and_then(|item| content::decode(item, &self.legacy_keys));
+                    let id = id.as_str();
                     match result {
                         Ok((text, image)) => p::detail(id, &text, &image, true),
                         Err(e) => p::detail(id, &e, &[], false),
@@ -337,6 +272,7 @@ impl Runtime {
                 }
             }
             13 => self.history_visible = data == "1",
+            14 => self.resumed(&data)?,
             _ => {}
         }
         Ok(())
@@ -355,20 +291,24 @@ pub fn run() {
         last_hash: String::new(),
         history: vec![],
         history_visible: false,
+        renew_after: Instant::now(),
+        socket_renewed: false,
     };
-    p::session(!r.state.token.is_empty());
+    let signed_in = !r.state.token.is_empty();
+    p::session(signed_in);
     r.reconnect();
-    if r.state.token.is_empty() {
+    if !signed_in {
         p::status("请登录同一个账号")
     }
     loop {
-        let wait = if !r.connected && !r.state.token.is_empty() && !r.state.paused {
+        let sync = if !r.connected && !r.state.token.is_empty() && !r.state.paused {
             r.retry.saturating_duration_since(Instant::now())
         } else if r.connected && !r.state.pending.is_empty() {
             Duration::from_secs(15)
         } else {
             Duration::from_secs(86400)
         };
+        let wait = r.renewal_wait().map_or(sync, |renewal| renewal.min(sync));
         match crate::events::receive(wait) {
             Some((kind, data)) => {
                 if let Err(e) = r.event(kind, data) {
@@ -376,11 +316,14 @@ pub fn run() {
                 }
             }
             None => {
+                if let Err(e) = r.ensure_fresh(false) {
+                    r.failure(e);
+                }
                 if r.connected {
                     if let Err(e) = r.flush() {
                         r.failure(e);
                     }
-                } else {
+                } else if Instant::now() >= r.retry {
                     r.reconnect()
                 }
             }

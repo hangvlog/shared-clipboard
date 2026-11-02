@@ -47,7 +47,8 @@ unsafe fn take(p: *mut c_char) -> String {
 pub fn status(s: &str) {
     unsafe { native_status(c(s).as_ptr()) }
 }
-pub fn request(method: &str, url: &str, token: &str, body: &Value) -> Result<Value, String> {
+/// HTTP status (0 on network failure) and body, without interpreting either.
+pub fn raw(method: &str, url: &str, token: &str, body: &Value) -> (i32, String) {
     let mut code = 0;
     let b = if body.is_null() {
         String::new()
@@ -63,8 +64,12 @@ pub fn request(method: &str, url: &str, token: &str, body: &Value) -> Result<Val
             &mut code,
         ))
     };
+    (code, raw)
+}
+pub fn request(method: &str, url: &str, token: &str, body: &Value) -> Result<Value, String> {
+    let (code, raw) = raw(method, url, token, body);
     if code == 401 {
-        return Err("登录已过期，请重新登录".into());
+        return Err(crate::session::EXPIRED.into());
     }
     if !(200..300).contains(&code) {
         return Err(format!("网络请求失败（{code}）"));

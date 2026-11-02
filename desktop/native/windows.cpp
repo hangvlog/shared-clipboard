@@ -66,6 +66,8 @@ static LRESULT CALLBACK WndProc(HWND window,UINT message,WPARAM w,LPARAM l){
   return 0;
  }
  if(message==WM_CLOSE){if(dialog)DestroyWindow(dialog);historyVisible=false;ShowWindow(window,SW_HIDE);sc_event(13,"0");sc_event(9,"");ui::clear();return 0;}
+ if(message==WM_POWERBROADCAST){if(w==PBT_APMRESUMEAUTOMATIC)sc_event(14,"wake");return TRUE;}
+ if(message==WM_ACTIVATEAPP){if(w)sc_event(14,"active");return 0;}
  if(message==WM_CLIPBOARDUPDATE){DWORD revision=GetClipboardSequenceNumber();if(revision!=lastRevision){lastRevision=revision;sc_event(2,"");}return 0;}
  if(message==WM_APP+1){if(l==WM_LBUTTONUP||l==WM_LBUTTONDBLCLK)showMain();if(l==WM_RBUTTONUP)menu();return 0;}
  if(message==WM_APP+2){auto text=(std::wstring*)l;connectionStatus=*text;delete text;ui::status(connectionStatus);wcsncpy_s(tray.szTip,(L"共享剪贴板 · "+connectionStatus).c_str(),_TRUNCATE);tray.uFlags=NIF_TIP;Shell_NotifyIconW(NIM_MODIFY,&tray);

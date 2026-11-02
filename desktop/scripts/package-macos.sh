@@ -3,6 +3,8 @@ set -eu
 cd "$(dirname "$0")/.."
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 export MACOSX_DEPLOYMENT_TARGET=10.15
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+BUILD=10
 cargo build --release --locked --target aarch64-apple-darwin
 cargo build --release --locked --target x86_64-apple-darwin
 TARGET=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')
@@ -13,7 +15,7 @@ swift scripts/render-macos-icon.swift "$OUT"
 iconutil -c icns "$OUT/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 cp "$OUT/StatusIcon.png" "$APP/Contents/Resources/StatusIcon.png"
 lipo -create "$TARGET/aarch64-apple-darwin/release/shared-clipboard" "$TARGET/x86_64-apple-darwin/release/shared-clipboard" -output "$APP/Contents/MacOS/shared-clipboard"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -23,8 +25,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>shared-clipboard</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.1.6</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>$VERSION</string>
+<key>CFBundleVersion</key><string>$BUILD</string>
 <key>LSUIElement</key><false/>
 <key>LSMinimumSystemVersion</key><string>10.15</string>
 <key>NSHighResolutionCapable</key><true/>
@@ -50,5 +52,5 @@ cat > "$STAGE/安装说明.txt" <<'INSTALL'
 这只允许本应用运行，无需关闭系统安全检查。受管理设备请遵循管理员策略。
 INSTALL
 hdiutil create -ov -format UDZO -fs HFS+ -volname "共享剪贴板" \
-  -srcfolder "$STAGE" "$OUT/SharedClipboard-1.1.6-macos-universal.dmg"
-hdiutil verify "$OUT/SharedClipboard-1.1.6-macos-universal.dmg"
+  -srcfolder "$STAGE" "$OUT/SharedClipboard-$VERSION-macos-universal.dmg"
+hdiutil verify "$OUT/SharedClipboard-$VERSION-macos-universal.dmg"
