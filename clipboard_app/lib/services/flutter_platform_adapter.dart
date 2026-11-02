@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path_lib;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'device_identity.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:crypto/crypto.dart' as hash_lib;
@@ -29,7 +30,6 @@ class FlutterPlatformAdapter extends PlatformAdapter {
 
   String get _dbName =>
       'clipboard_cache_${hash_lib.sha256.convert(utf8.encode(accountId))}.db';
-  static const _prefsDeviceIdKey = 'clipboard_device_id';
   String get _prefsSyncTimeKey => 'clipboard_last_sync_time:$accountId';
 
   // ============================================
@@ -239,14 +239,9 @@ class FlutterPlatformAdapter extends PlatformAdapter {
   String getDeviceId() {
     if (_deviceId != null) return _deviceId!;
 
-    _deviceId = _prefs?.getString(_prefsDeviceIdKey);
-    if (_deviceId == null) {
-      _deviceId =
-          'mobile-${DateTime.now().millisecondsSinceEpoch}-'
-          '${DateTime.now().microsecond.toRadixString(36)}';
-      _prefs?.setString(_prefsDeviceIdKey, _deviceId!);
-    }
-    return _deviceId!;
+    final prefs = _prefs;
+    if (prefs != null) return _deviceId = DeviceIdentity.of(prefs);
+    return 'mobile-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   @override

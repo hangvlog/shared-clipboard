@@ -12,6 +12,7 @@ enum MobileEvent {
   historyFailed,
   readFailed,
   authExpired,
+  sessionRenewed,
 }
 
 /// Only fixed event names leave the device: never content, identity or exceptions.

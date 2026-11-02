@@ -307,7 +307,7 @@ void main() {
     },
   );
   test(
-    'Expired login stops showing cached history and asks to sign in again',
+    'Rejected token stops showing cached history and requests session recovery',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       var requests = 0;

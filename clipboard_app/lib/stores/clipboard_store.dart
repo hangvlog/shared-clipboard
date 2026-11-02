@@ -33,6 +33,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   String? get encryptionNotice => _manager?.encryptionNotice;
   String? _token;
   AuthStore? _auth;
+  bool _sessionStalled = false;
   int _generation = 0;
   bool _disposed = false;
   bool get _background =>
@@ -48,6 +49,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
       PaintingBinding.instance.imageCache.clear();
     } else if (state == AppLifecycleState.resumed) {
       _diagnostics.resume();
+      unawaited(_auth?.ensureFresh());
       final generation = _generation;
       _manager
           ?.resume()
@@ -185,7 +187,21 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
     if (_disposed || generation != _generation) return;
     unawaited(_diagnostics.report(MobileEvent.authExpired));
     _autoSync?.pause();
-    unawaited(_auth?.expireSession());
+    unawaited(_recoverSession(generation));
+  }
+
+  /// A renewed token re-initializes through [updateAuth]; a rejected one returns to login.
+  Future<void> _recoverSession(int generation) async {
+    final auth = _auth;
+    if (auth == null) return;
+    final renewed = await auth.renew();
+    if (renewed) unawaited(_diagnostics.report(MobileEvent.sessionRenewed));
+    if (renewed || _disposed || generation != _generation || !auth.isLoggedIn) {
+      return;
+    }
+    _sessionStalled = true;
+    syncNotice = '登录续期失败，请检查网络后点按刷新';
+    notifyListeners();
   }
 
   /// 手动同步剪贴板（用户主动触发）
@@ -282,6 +298,11 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
+      if (_sessionStalled) {
+        await _auth?.renew();
+        return;
+      }
+      await _auth?.ensureFresh();
       await _manager?.restoreAccountEncryption();
       await _manager?.syncWithServer();
     } catch (e) {
@@ -320,6 +341,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
   void _cleanup() {
     _generation++;
+    _sessionStalled = false;
     _autoSync?.dispose();
     _autoSync = null;
     syncNotice = null;
