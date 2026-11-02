@@ -25,6 +25,9 @@ char *native_clipboard_text(void);
 unsigned char *native_clipboard_png(size_t *length);
 int native_clipboard_write(const char *text, const unsigned char *image, size_t length);
 void native_free(void *memory);
+/* Command-line session changes: announce to a running app; attach the parent console for output. */
+void native_announce_session(void);
+void native_attach_console(void);
 #ifdef __cplusplus
 }
 #endif

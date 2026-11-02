@@ -1,6 +1,6 @@
 Unicode true
 !ifndef VERSION
-!define VERSION "1.1.9"
+!define VERSION "1.1.10"
 !endif
 Name "Shared Clipboard"
 OutFile "SharedClipboard-${VERSION}-windows-x64-setup.exe"

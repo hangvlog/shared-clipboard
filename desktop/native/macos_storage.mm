@@ -24,3 +24,8 @@ extern "C" char *native_data_dir(){@autoreleasepool{
  if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil])return strdup("");
  return strdup(dir.path.UTF8String);
 }}
+// The running app reloads the stored session (see macos.mm).
+extern "C" void native_announce_session(){@autoreleasepool{
+ [[NSDistributedNotificationCenter defaultCenter]postNotificationName:@"chat.clawkit.shared-clipboard.session" object:nil userInfo:nil deliverImmediately:YES];
+}}
+extern "C" void native_attach_console(){}

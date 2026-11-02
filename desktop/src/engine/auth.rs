@@ -32,27 +32,38 @@ impl Runtime {
             session::now(),
         )?;
         let password = v["encryption"].as_str().unwrap_or("");
-        let key = if password.is_empty() && grant.username == self.state.username {
-            self.state.key.clone()
-        } else if password.is_empty() {
-            String::new()
-        } else {
-            crypto::derive(password, &grant.username)
-        };
-        let previous = std::mem::take(&mut self.state.refresh_token);
-        self.state.clear_pending();
-        self.state = State {
-            username: grant.username,
-            token: grant.token,
-            refresh_token: grant.refresh_token,
-            expires_at: grant.expires_at,
-            key,
-            device: self.state.device.clone(),
-            ..State::default()
-        };
+        let key = (!password.is_empty()).then(|| crypto::derive(password, &grant.username));
+        let previous = self.state.sign_in(grant, key);
         self.legacy_keys = legacy::keys(&self.state);
         self.state.save()?;
         revoke(previous, self.state.device.clone());
+        self.session_loaded();
+        Ok(())
+    }
+
+    /// Adopt a session another process stored (command-line `login`/`logout`).
+    pub(super) fn reload(&mut self) -> Result<(), String> {
+        let stored = State::load();
+        if stored.token == self.state.token && stored.refresh_token == self.state.refresh_token {
+            return Ok(());
+        }
+        self.generation += 1;
+        p::ws_close();
+        self.connected = false;
+        self.state = stored;
+        self.legacy_keys = legacy::keys(&self.state);
+        if self.state.token.is_empty() {
+            self.history.clear();
+            self.last_hash.clear();
+            p::session(false);
+            p::status("未登录");
+            return Ok(());
+        }
+        self.session_loaded();
+        Ok(())
+    }
+
+    fn session_loaded(&mut self) {
         p::reset_clipboard();
         crate::events::discard_clipboard();
         self.last_hash.clear();
@@ -60,19 +71,13 @@ impl Runtime {
         self.renew_after = Instant::now();
         p::session(true);
         self.reconnect();
-        Ok(())
     }
 
     pub(super) fn sign_out(&mut self) -> Result<(), String> {
-        let refresh_token = std::mem::take(&mut self.state.refresh_token);
+        let refresh_token = self.state.sign_out();
         self.generation += 1;
         p::ws_close();
         self.connected = false;
-        self.state.clear_pending();
-        self.state = State {
-            device: self.state.device.clone(),
-            ..State::default()
-        };
         self.state.save()?;
         revoke(refresh_token, self.state.device.clone());
         self.legacy_keys.clear();

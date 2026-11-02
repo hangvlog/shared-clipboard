@@ -28,6 +28,7 @@ static ClipboardWindow *mainWindow;
  self.timer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(tick) userInfo:nil repeats:YES];self.timer.tolerance=.25;
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(sleep:) name:NSWorkspaceWillSleepNotification object:nil];
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(wake:) name:NSWorkspaceDidWakeNotification object:nil];
+ [[NSDistributedNotificationCenter defaultCenter]addObserver:self selector:@selector(sessionChanged:) name:@"chat.clawkit.shared-clipboard.session" object:nil suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
  mainWindow=[ClipboardWindow new];sc_start();[mainWindow open];
  if([NSProcessInfo.processInfo.arguments containsObject:@"--login"])[self login];
  if([NSProcessInfo.processInfo.arguments containsObject:@"--history"])sc_event(5,"");
@@ -36,6 +37,7 @@ static ClipboardWindow *mainWindow;
 -(void)sleep:(NSNotification*)n {[self.timer invalidate];self.timer=nil;}
 -(void)wake:(NSNotification*)n {lastChange=NSPasteboard.generalPasteboard.changeCount;self.timer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(tick) userInfo:nil repeats:YES];self.timer.tolerance=.25;sc_event(14,"wake");}
 -(void)applicationDidBecomeActive:(NSNotification*)n {sc_event(14,"active");}
+-(void)sessionChanged:(NSNotification*)n {sc_event(15,"");}
 -(BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {[mainWindow open];return YES;}
 -(void)login {
  if(self.showingLogin)return;self.showingLogin=YES;

@@ -32,6 +32,8 @@ unsafe extern "C" {
         success: c_int,
     );
     fn native_session(logged_in: c_int);
+    fn native_announce_session();
+    fn native_attach_console();
 }
 fn c(s: &str) -> CString {
     CString::new(s.replace('\0', "")).unwrap()
@@ -166,4 +168,12 @@ pub fn session(logged_in: bool) {
     unsafe {
         native_session(logged_in as c_int);
     }
+}
+/// Tell a running app that the stored session changed (command-line login/logout).
+pub fn announce_session() {
+    unsafe { native_announce_session() }
+}
+/// Windows GUI builds have no console; reuse the caller's for command-line output.
+pub fn attach_console() {
+    unsafe { native_attach_console() }
 }

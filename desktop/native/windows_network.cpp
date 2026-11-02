@@ -81,3 +81,12 @@ extern "C" int native_secret_save(const char *text){
 }
 
 extern "C" char *native_data_dir(){auto path=secretPath();if(path.empty())return copy("");path.resize(path.find_last_of(L'\\'));int n=WideCharToMultiByte(CP_UTF8,0,path.c_str(),(int)path.size(),nullptr,0,nullptr,nullptr);std::string v(n,'\0');WideCharToMultiByte(CP_UTF8,0,path.c_str(),(int)path.size(),v.data(),n,nullptr,nullptr);return copy(v);}
+// Command-line login may run in another logon session (e.g. SSH); a directory watch crosses that boundary.
+extern "C" void native_watch_session(){
+ auto path=secretPath();if(path.empty())return;path.resize(path.find_last_of(L'\\'));
+ std::thread([path]{HANDLE change=FindFirstChangeNotificationW(path.c_str(),FALSE,FILE_NOTIFY_CHANGE_LAST_WRITE|FILE_NOTIFY_CHANGE_FILE_NAME);if(change==INVALID_HANDLE_VALUE)return;
+  while(WaitForSingleObject(change,INFINITE)==WAIT_OBJECT_0){Sleep(300);sc_event(15,"");if(!FindNextChangeNotification(change))break;}
+  FindCloseChangeNotification(change);}).detach();
+}
+extern "C" void native_announce_session(){}
+extern "C" void native_attach_console(){if(!GetStdHandle(STD_OUTPUT_HANDLE))AttachConsole(ATTACH_PARENT_PROCESS);}

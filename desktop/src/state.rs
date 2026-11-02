@@ -1,4 +1,4 @@
-use crate::{crypto, platform};
+use crate::{crypto, platform, session::Grant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[derive(Serialize, Deserialize, Clone)]
@@ -107,5 +107,38 @@ impl State {
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+    /// Replace the account session, keeping this install's device id. `key` defaults to the
+    /// stored legacy key for the same account. Returns the previous refresh credential to revoke.
+    pub fn sign_in(&mut self, grant: Grant, key: Option<String>) -> String {
+        let previous = std::mem::take(&mut self.refresh_token);
+        let key = key.unwrap_or_else(|| {
+            if grant.username == self.username {
+                self.key.clone()
+            } else {
+                String::new()
+            }
+        });
+        self.clear_pending();
+        *self = State {
+            username: grant.username,
+            token: grant.token,
+            refresh_token: grant.refresh_token,
+            expires_at: grant.expires_at,
+            key,
+            device: self.device.clone(),
+            ..State::default()
+        };
+        previous
+    }
+    /// Signed-out state for this install; returns the refresh credential to revoke.
+    pub fn sign_out(&mut self) -> String {
+        let previous = std::mem::take(&mut self.refresh_token);
+        self.clear_pending();
+        *self = State {
+            device: self.device.clone(),
+            ..State::default()
+        };
+        previous
     }
 }

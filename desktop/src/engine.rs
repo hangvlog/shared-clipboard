@@ -278,6 +278,7 @@ impl Runtime {
             }
             13 => self.history_visible = data == "1",
             14 => self.resumed(&data)?,
+            15 => self.reload()?,
             _ => {}
         }
         Ok(())

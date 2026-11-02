@@ -100,3 +100,17 @@ Android 1.1.2 构建工具链固定为 Flutter 3.41.7 / Dart 3.11.5、JDK 17 与
 ## Windows / macOS 1.1.9 自动续期
 
 桌面端改用与 Android 1.1.8 相同的可撤销设备会话：登录调用 `POST /api/codex-remote/sso/password`（`client=shared-clipboard`，`device_id` 为本机持久设备 ID），续期凭据与访问令牌一起保存在原有的 macOS Keychain / Windows DPAPI 会话中。启动或重连时、令牌剩余不足 2 小时（后台计时，至少每 30 分钟按系统时间复查一次）、系统唤醒或应用回到前台时，以及任何请求或同步连接因令牌被拒时，调用 `/sso/refresh` 换新令牌；同一旧令牌触发的多次续期只发一次请求。只有续期返回 401/403 才退出登录并提示「登录已过期，请重新登录」，保留账号名；网络或服务故障时保留登录，提示稍后重试，并在 60 秒后再次续期。退出登录或切换账号会在后台调用 `/sso/logout` 撤销旧续期凭据。1.1.6（macOS）、1.1.3（Windows）及更早版本保存的普通令牌没有续期凭据，升级后需重新登录一次。实现见 `desktop/src/session.rs` 与 `desktop/src/engine/auth.rs`。
+
+## 桌面 1.1.10 命令行登录
+
+同一个桌面程序支持命令行会话管理，便于脚本和远程运维（如经 SSH 登录家用 Windows），无需操作窗口：
+
+```sh
+# macOS
+printf '%s\n' "$PASSWORD" | "/Applications/Shared Clipboard.app/Contents/MacOS/shared-clipboard" login 15700000000
+"/Applications/Shared Clipboard.app/Contents/MacOS/shared-clipboard" status
+# Windows（PowerShell）
+$password | & "D:\Office_Software\SharedClipboard\shared-clipboard.exe" login 15700000000 | Out-String
+```
+
+密码只从标准输入读取，不出现在参数和进程列表；输出 JSON（`signed_in/username/renewable/expires_in`），不含令牌。登录与界面登录一样换取可续期的 `shared-clipboard` 会话并写入 Keychain / DPAPI，同时撤销被替换的旧会话。正在运行的程序会立即接管：macOS 通过分布式通知，Windows 通过监听会话目录（可跨 SSH 登录会话）。`logout` 撤销续期凭据并退出登录。Windows 的 DPAPI 绑定当前用户，需以桌面同一账号运行命令。

@@ -1,4 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod cli;
 mod content;
 mod crypto;
 mod endpoints;
@@ -47,6 +48,10 @@ pub extern "C" fn sc_history_select(index: i32) {
     events::send(6, index.to_string());
 }
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = cli::run(&args) {
+        std::process::exit(code);
+    }
     unsafe {
         platform::native_run();
     }
