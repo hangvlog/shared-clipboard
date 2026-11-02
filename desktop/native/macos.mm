@@ -19,7 +19,14 @@ static void offerLoginItem(){
  NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;NSString *bundle=NSBundle.mainBundle.bundlePath;
  if([defaults boolForKey:@"loginItemOffered"]||!([bundle hasPrefix:@"/Applications/"]||[bundle hasPrefix:[NSHomeDirectory() stringByAppendingPathComponent:@"Applications/"]]))return;
  BOOL done=NO;
- if(@available(macOS 13.0,*)){SMAppService *service=SMAppService.mainAppService;done=service.status==SMAppServiceStatusEnabled||[service registerAndReturnError:nil];}
+ // Runtime lookup instead of @available: the Rust link step does not pull in clang's version-check helper.
+ Class serviceClass=NSClassFromString(@"SMAppService");
+ if(serviceClass){
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+  SMAppService *service=[serviceClass mainAppService];done=service.status==SMAppServiceStatusEnabled||[service registerAndReturnError:nil];
+#pragma clang diagnostic pop
+ }
  else{
   NSString *dir=[NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents"];[NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
   NSDictionary *agent=@{@"Label":@"chat.clawkit.shared-clipboard",@"ProgramArguments":@[NSBundle.mainBundle.executablePath,@"--background"],@"RunAtLoad":@YES};
