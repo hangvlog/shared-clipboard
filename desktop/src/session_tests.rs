@@ -128,6 +128,15 @@ fn refused_renewal_requires_sign_in() {
             renew(&http, &mut state, "access-old", NOW),
             Renewal::Rejected(_)
         ));
+        assert!(matches!(
+            renew(&http, &mut state, "access-old", NOW),
+            Renewal::Rejected(_)
+        ));
+        assert_eq!(
+            http.paths().len(),
+            1,
+            "a refused credential is not sent again"
+        );
     }
     // Upgraded from 1.1.6 or older: a plain token with no refresh credential.
     let legacy: State = serde_json::from_str(r#"{"token":"legacy","username":"alice"}"#).unwrap();

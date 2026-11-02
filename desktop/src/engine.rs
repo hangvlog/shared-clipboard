@@ -23,12 +23,17 @@ struct Runtime {
     socket_renewed: bool,
 }
 impl Runtime {
-    fn restore_legacy_keys(&mut self) {
-        if let Ok(data) = self.call("GET", "/auth/encryption-salt", &Value::Null) {
-            if let Ok(Some(key)) = legacy::account_key(&data, &self.state.username) {
-                legacy::add(&mut self.legacy_keys, key);
+    fn restore_legacy_keys(&mut self) -> Result<(), String> {
+        match self.call("GET", "/auth/encryption-salt", &Value::Null) {
+            Ok(data) => {
+                if let Ok(Some(key)) = legacy::account_key(&data, &self.state.username) {
+                    legacy::add(&mut self.legacy_keys, key);
+                }
             }
+            Err(e) if e == EXPIRED => return Err(e),
+            Err(_) => {}
         }
+        Ok(())
     }
 
     fn reconnect(&mut self) {
@@ -140,7 +145,7 @@ impl Runtime {
                 return self.socket_rejected();
             }
             self.socket_renewed = false;
-            self.restore_legacy_keys();
+            self.restore_legacy_keys()?;
             self.connected = true;
             self.delay = 1;
             p::status("已连接 · 自动同步");
@@ -189,7 +194,7 @@ impl Runtime {
                 if self.state.token.is_empty() {
                     return Err("请先登录".into());
                 }
-                self.restore_legacy_keys();
+                self.restore_legacy_keys()?;
                 let rows = self.call(
                     "GET",
                     "/clipboard/history?limit=50&metadata_only=true",

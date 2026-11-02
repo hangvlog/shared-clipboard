@@ -112,6 +112,11 @@ pub fn renew(http: &dyn Http, state: &mut State, stale: &str, now: u64) -> Renew
             }
             Renewal::Renewed
         }
+        Err(Renewal::Rejected(m)) => {
+            // Dead credential: later triggers must not send it again.
+            state.refresh_token.clear();
+            Renewal::Rejected(m)
+        }
         Err(outcome) => outcome,
     }
 }
