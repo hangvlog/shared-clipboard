@@ -72,3 +72,9 @@ fn another_account_drops_the_legacy_key_and_sign_out_returns_the_credential() {
     assert!(state.token.is_empty() && state.refresh_token.is_empty());
     assert_eq!(state.device, "0123456789abcdef0123456789abcdef");
 }
+
+#[test]
+fn piped_password_drops_byte_order_mark_and_line_ending_only() {
+    assert_eq!(password_line("\u{feff}123456789\r\n"), "123456789");
+    assert_eq!(password_line(" pass word \n"), " pass word ");
+}

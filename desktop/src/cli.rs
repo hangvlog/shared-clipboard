@@ -37,7 +37,14 @@ pub fn run(args: &[String]) -> Option<i32> {
 fn read_password() -> String {
     let mut line = String::new();
     let _ = std::io::stdin().lock().read_line(&mut line);
-    line.trim_end_matches(['\r', '\n']).to_string()
+    password_line(&line)
+}
+
+/// PowerShell on a UTF-8 console prefixes piped input with a byte-order mark.
+fn password_line(raw: &str) -> String {
+    raw.trim_start_matches('\u{feff}')
+        .trim_end_matches(['\r', '\n'])
+        .to_string()
 }
 
 fn login(account: &str, password: &str) -> Result<serde_json::Value, String> {
