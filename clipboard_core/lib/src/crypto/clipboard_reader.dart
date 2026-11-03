@@ -8,6 +8,12 @@ class ClipboardReader {
   final ClipboardCryptoService crypto;
   ClipboardReader(this.api, this.crypto);
 
+  /// Decrypted short previews of legacy encrypted records, memory only (never written to disk),
+  /// so a refresh does not fetch every encrypted body again.
+  final Map<String, ClipboardItem> _previews = {};
+
+  void forget() => _previews.clear();
+
   ClipboardItem decrypt(ClipboardItem item) {
     if (item.metadataOnly) {
       return preview(
@@ -46,14 +52,22 @@ class ClipboardReader {
     required bool Function() active,
   }) async {
     final visible = <ClipboardItem>[];
+    _previews.removeWhere((id, _) => !snapshot.any((item) => item.id == id));
     for (final item in snapshot) {
       if (!active()) break;
       // One bounded text body at a time. Never preload full image histories.
       if (item.encrypted && item.contentType == 'text' && crypto.hasKey) {
+        final cached = _previews[item.id];
+        if (cached != null) {
+          visible.add(cached);
+          continue;
+        }
         try {
-          final full = await read(item);
+          final full = preview(await read(item));
           if (!active()) break;
-          visible.add(preview(full));
+          // Only successful decryptions; failures retry after another password is added.
+          if (!full.encrypted) _previews[item.id] = full;
+          visible.add(full);
           continue;
         } catch (_) {
           visible.add(item.copyWith(content: '暂时无法读取，点按重试'));

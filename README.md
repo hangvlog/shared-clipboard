@@ -123,3 +123,10 @@ $password | & "D:\Office_Software\SharedClipboard\shared-clipboard.exe" login 15
 ## Android 1.1.13 应用内更新
 
 参考 ClawKit Mobile：启动及回到前台（距上次检查超过 6 小时）自动调用 `GET /api/releases/shared-clipboard/update?platform=android&arch=universal&channel=preview`，以系统读取的已安装 `versionName` 比较本平台安装包版本（服务端比较 `artifact_version`）。发现新版后在历史列表上方显示更新卡片，菜单提供“检查更新”。点“下载更新”后由系统 DownloadManager 在后台下载（通知栏显示进度，可退出应用）；完成后校验大小、SHA-256、包名、版本名、版本代码递增及签名与已安装版本一致，才交给系统安装界面。缺少“安装未知应用”权限时先打开系统设置，返回后自动继续。安装始终需要前台点按。iOS 不提供应用内更新。原生实现见 `AppUpdater.kt`、`UpdateDownloadStore.kt`、`UpdatePackageVerifier.kt`。
+
+## 移动端 1.1.14 增量刷新
+
+- 旧加密记录解密后的短预览按记录 ID 缓存在内存中（不写磁盘），只保留最近一次列表中的记录；之后的刷新只发 1 次 `history?limit=50&metadata_only=true`，不再逐条读取全文。此前每次加载会额外串行请求每条旧加密记录（实测 16–19 次）。
+- 进入后台只断开同步连接，保留列表；回到前台立即显示原列表，再用一次请求比对更新。
+- 登录续期只原地更新令牌并重连，不再销毁重建会话、清空列表。
+- 冷启动仍先显示磁盘中的元数据缓存（明文记录的短预览），旧加密记录在首次刷新时解密一次。

@@ -32,6 +32,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   );
   String? get encryptionNotice => _manager?.encryptionNotice;
   String? _token;
+  String? _username;
   AuthStore? _auth;
   bool _sessionStalled = false;
   int _generation = 0;
@@ -90,6 +91,18 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
   void updateAuth(AuthStore authStore) {
     _auth = authStore;
     if (_token == authStore.token) return;
+    final manager = _manager;
+    final token = authStore.token;
+    if (manager != null && token != null && authStore.username == _username) {
+      // Same account, renewed token: keep the list and refresh in place.
+      _token = token;
+      _sessionStalled = false;
+      syncNotice = null;
+      _autoSync?.enabled = !_background;
+      unawaited(manager.updateToken(token).catchError((Object _) {}));
+      notifyListeners();
+      return;
+    }
     _cleanup();
     _token = authStore.token;
     if (_token != null && authStore.username != null) {
@@ -99,6 +112,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _initialize(String token, String username) async {
     final generation = _generation;
+    _username = username;
     final platform = FlutterPlatformAdapter(accountId: username);
     _platform = platform;
     _isLoading = true;
@@ -341,6 +355,7 @@ class ClipboardStore extends ChangeNotifier with WidgetsBindingObserver {
 
   void _cleanup() {
     _generation++;
+    _username = null;
     _sessionStalled = false;
     _autoSync?.dispose();
     _autoSync = null;

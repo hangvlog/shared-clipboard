@@ -109,7 +109,8 @@ void main() {
           await manager.copyToClipboard(manager.items.single);
           expect(platform.copied, '同账号可见');
           manager.suspend();
-          expect(manager.items, isEmpty);
+          // Background keeps the short previews so returning shows the list at once.
+          expect(manager.items.single.content, '同账号可见');
         } finally {
           manager.dispose();
           await server.close(force: true);
@@ -307,7 +308,7 @@ void main() {
     },
   );
   test(
-    'Rejected token stops showing cached history and requests session recovery',
+    'Rejected token requests session recovery without clearing the list',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       var requests = 0;
@@ -350,8 +351,9 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(requests, greaterThan(0));
         expect(expired, greaterThan(0));
-        expect(manager.items, isEmpty);
-        expect(emitted.last, isEmpty);
+        // The list stays while the session is renewed or the user is sent to login.
+        expect(manager.items.single.id, 'cached');
+        expect(emitted, isNotEmpty);
         await expectLater(
           manager.syncWithServer(),
           throwsA(isA<AuthExpiredException>()),
@@ -380,4 +382,99 @@ void main() {
       throwsA(anything),
     );
   });
+  test(
+    'Refresh reuses decrypted previews, background keeps the list and renewal updates the token in place',
+    () async {
+      final crypto = ClipboardCryptoService();
+      await crypto.deriveKeyFromUsername('123456789', 'fixture-user');
+      ClipboardItem encrypted(String id, String text) => ClipboardItem(
+        id: id,
+        content: crypto.encryptText(text),
+        contentType: 'text',
+        deviceId: 'mac',
+        deviceName: 'Mac',
+        createdAt: '2026-10-01T00:00:00',
+        encrypted: true,
+      );
+      final records = [
+        ClipboardItem(
+          id: 'plain',
+          content: '新内容',
+          contentType: 'text',
+          deviceId: 'win',
+          deviceName: 'Windows',
+          createdAt: '2026-11-03T00:00:00',
+        ),
+        encrypted('old-1', '旧记录一'),
+        encrypted('old-2', '旧记录二'),
+      ];
+      final paths = <String>[];
+      final tokens = <String?>[];
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        paths.add(request.uri.path);
+        tokens.add(request.headers.value('authorization'));
+        request.response.headers.contentType = ContentType.json;
+        final path = request.uri.path;
+        final dynamic data = path.endsWith('/encryption-salt')
+            ? {'password': null}
+            : path.endsWith('/history')
+            ? records
+                  .map(
+                    (r) =>
+                        (r.encrypted
+                                ? r.copyWith(content: '', metadataOnly: true)
+                                : r)
+                            .toJson(),
+                  )
+                  .toList()
+            : records
+                      .where((r) => path.endsWith('/${r.id}'))
+                      .firstOrNull
+                      ?.toJson() ??
+                  {};
+        request.response.write(jsonEncode({'code': 200, 'data': data}));
+        await request.response.close();
+      });
+      final base = 'http://127.0.0.1:${server.port}';
+      final manager = ClipboardManager(
+        config: ClipboardConfig(
+          apiBaseUrl: base,
+          wsBaseUrl: base,
+          token: 'old',
+        ),
+        platform: MemoryPlatform(),
+        accountUsername: 'fixture-user',
+        autoCopyRemote: false,
+      );
+      int count(String kind) =>
+          paths.where((p) => p.startsWith('/$kind')).length;
+      try {
+        await manager.restoreAccountEncryption();
+        await manager.syncWithServer();
+        expect(manager.items.map((i) => i.content), ['新内容', '旧记录一', '旧记录二']);
+        expect(count('clipboard/history'), 1);
+        expect(count('clipboard/item'), 2);
+        await manager.syncWithServer();
+        expect(count('clipboard/history'), 2);
+        expect(
+          count('clipboard/item'),
+          2,
+          reason: 'decrypted previews are reused',
+        );
+        manager.suspend();
+        expect(manager.items, hasLength(3));
+        await manager.resume();
+        expect(count('clipboard/history'), 3);
+        expect(count('clipboard/item'), 2);
+        await manager.updateToken('renewed');
+        expect(manager.items, hasLength(3));
+        expect(tokens.last, 'Bearer renewed');
+        expect(count('clipboard/item'), 2);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+      }
+    },
+  );
 }

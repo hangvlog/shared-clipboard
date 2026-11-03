@@ -125,9 +125,18 @@ class ClipboardManager {
     if (_disposed) return;
     _generation++;
     _syncService.disconnect();
-    _items = [];
-    _itemsController.add(_items);
     onAuthExpired?.call();
+  }
+
+  /// A renewed access token: keep the list, reconnect and refresh in place.
+  Future<void> updateToken(String token) async {
+    if (_disposed) return;
+    config.token = token;
+    _generation++;
+    if (_suspended) return;
+    _syncService.disconnect();
+    _syncService.connect();
+    await syncWithServer();
   }
 
   Future<void> _write(Future<void> Function() action) async {
@@ -138,12 +147,11 @@ class ClipboardManager {
     }
   }
 
+  /// Background: disconnect but keep the short previews, so returning shows the list at once.
   void suspend() {
     _generation++;
     _suspended = true;
     _syncService.disconnect();
-    _items = [];
-    if (!_disposed) _itemsController.add(_items);
   }
 
   Future<void> resume() async {
@@ -313,6 +321,7 @@ class ClipboardManager {
 
   void clearEncryptionKey() {
     _cryptoService.clearKey();
+    _reader.forget();
   }
 
   Future<void> _handleRemoteSync(ClipboardItem rawItem) async {
@@ -345,6 +354,7 @@ class ClipboardManager {
     _generation++;
     _items = [];
     _cryptoService.clearKey();
+    _reader.forget();
     _syncSubscription?.cancel();
     _syncService.dispose();
     _apiClient.dispose();
