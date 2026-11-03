@@ -266,20 +266,27 @@ class ClipboardItemTile extends StatelessWidget {
     return Icons.computer;
   }
 
-  String _formatTime(String isoString) {
-    try {
-      final dt = DateTime.parse(isoString);
-      final now = DateTime.now();
-      final diff = now.difference(dt);
+  String _formatTime(String isoString) => formatClipboardTime(isoString);
+}
 
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
-      if (diff.inDays < 1) return '${diff.inHours}小时前';
-      if (diff.inDays < 7) return '${diff.inDays}天前';
+/// The server sends naive UTC timestamps (`2026-11-03T02:40:46`); a missing offset means UTC.
+DateTime parseServerTime(String value) {
+  final zoned = RegExp(r'(Z|[+-]\d{2}:?\d{2})$').hasMatch(value);
+  return DateTime.parse(zoned ? value : '${value}Z').toLocal();
+}
 
-      return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return isoString;
-    }
+String formatClipboardTime(String isoString, {DateTime? now}) {
+  try {
+    final dt = parseServerTime(isoString);
+    final diff = (now ?? DateTime.now()).difference(dt);
+
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
+    if (diff.inDays < 1) return '${diff.inHours}小时前';
+    if (diff.inDays < 7) return '${diff.inDays}天前';
+
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  } catch (_) {
+    return isoString;
   }
 }

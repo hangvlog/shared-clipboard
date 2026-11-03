@@ -12,7 +12,7 @@ class EnvConfig {
   );
 
   /// Keep in step with pubspec.yaml; reported in anonymous diagnostics.
-  static const String appVersion = '1.1.8';
+  static const String appVersion = '1.1.12';
 
   static bool get isDevelopment => _env == 'development';
   static bool get isProduction => _env == 'production';

@@ -159,4 +159,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('登录已过期，请重新登录'), findsNothing);
   });
+  test('Server timestamps without an offset are UTC', () {
+    final now = DateTime.utc(2026, 11, 3, 2, 45);
+    expect(formatClipboardTime('2026-11-03T02:40:46', now: now), '4分钟前');
+    expect(formatClipboardTime('2026-11-03T02:40:46.123456', now: now), '4分钟前');
+    expect(formatClipboardTime('2026-11-03T02:40:46Z', now: now), '4分钟前');
+    expect(formatClipboardTime('2026-11-03T10:40:46+08:00', now: now), '4分钟前');
+    expect(formatClipboardTime('2026-11-02T20:45:00', now: now), '6小时前');
+    expect(parseServerTime('2026-11-03T02:40:46').isUtc, isFalse);
+    expect(formatClipboardTime('not a time'), 'not a time');
+  });
 }
