@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'stores/clipboard_store.dart';
 import 'stores/auth_store.dart';
+import 'stores/update_store.dart';
 import 'screens/login_screen.dart';
 import 'screens/clipboard_screen.dart';
 import 'widgets/glass_surface.dart';
@@ -19,6 +20,7 @@ class ClipboardApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthStore()),
+        ChangeNotifierProvider(create: (_) => UpdateStore()),
         ChangeNotifierProxyProvider<AuthStore, ClipboardStore>(
           create: (_) => ClipboardStore(),
           update: (_, authStore, clipboardStore) {

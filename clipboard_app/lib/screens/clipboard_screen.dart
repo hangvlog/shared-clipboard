@@ -7,6 +7,7 @@ import '../widgets/clipboard_item_tile.dart';
 import '../widgets/clipboard_detail.dart';
 import 'dart:io';
 import '../widgets/glass_surface.dart';
+import '../widgets/update_card.dart';
 
 /// 剪贴板主页面
 class ClipboardScreen extends StatelessWidget {
@@ -51,6 +52,9 @@ class ClipboardScreen extends StatelessWidget {
                   case 'clear':
                     _showClearConfirm(context, store);
                     break;
+                  case 'update':
+                    checkForUpdates(context);
+                    break;
                   case 'logout':
                     authStore.logout();
                     break;
@@ -69,6 +73,17 @@ class ClipboardScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (Platform.isAndroid)
+                  const PopupMenuItem(
+                    value: 'update',
+                    child: Row(
+                      children: [
+                        Icon(Icons.system_update_rounded),
+                        SizedBox(width: 8),
+                        Text('检查更新'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem(
                   value: 'logout',
                   child: Row(
@@ -131,6 +146,7 @@ class ClipboardScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                const UpdateCard(),
                 if (store.syncNotice != null) Text(store.syncNotice!),
                 if (store.encryptionNotice != null)
                   Text(store.encryptionNotice!),

@@ -19,6 +19,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
         channel = MethodChannel(engine.dartExecutor.binaryMessenger, "chat.clawkit.clipboard/events")
+        MethodChannel(engine.dartExecutor.binaryMessenger, "chat.clawkit.clipboard/updater")
+            .setMethodCallHandler(AppUpdater(this))
     }
 
     override fun onResume() {

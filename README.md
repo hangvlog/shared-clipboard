@@ -119,3 +119,7 @@ $password | & "D:\Office_Software\SharedClipboard\shared-clipboard.exe" login 15
 
 - Windows：安装包写入当前用户启动项 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SharedClipboard`（`"<安装目录>\shared-clipboard.exe" --background`），开机后只在托盘运行；卸载时删除。可在任务管理器“启动应用”中关闭。
 - macOS：从“应用程序”文件夹首次启动时注册登录项（macOS 13+ 用 `SMAppService`，更早版本写 `~/Library/LaunchAgents/chat.clawkit.shared-clipboard.plist`），只注册一次；之后在“系统设置 → 通用 → 登录项”中关闭不会被重新打开。作为登录项启动时只在菜单栏运行，不弹主窗口。
+
+## Android 1.1.13 应用内更新
+
+参考 ClawKit Mobile：启动及回到前台（距上次检查超过 6 小时）自动调用 `GET /api/releases/shared-clipboard/update?platform=android&arch=universal&channel=preview`，以系统读取的已安装 `versionName` 比较本平台安装包版本（服务端比较 `artifact_version`）。发现新版后在历史列表上方显示更新卡片，菜单提供“检查更新”。点“下载更新”后由系统 DownloadManager 在后台下载（通知栏显示进度，可退出应用）；完成后校验大小、SHA-256、包名、版本名、版本代码递增及签名与已安装版本一致，才交给系统安装界面。缺少“安装未知应用”权限时先打开系统设置，返回后自动继续。安装始终需要前台点按。iOS 不提供应用内更新。原生实现见 `AppUpdater.kt`、`UpdateDownloadStore.kt`、`UpdatePackageVerifier.kt`。
