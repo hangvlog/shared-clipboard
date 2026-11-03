@@ -469,7 +469,11 @@ void main() {
         expect(count('clipboard/item'), 2);
         await manager.updateToken('renewed');
         expect(manager.items, hasLength(3));
-        expect(tokens.last, 'Bearer renewed');
+        final lastHistory = paths.lastIndexWhere(
+          (p) => p.endsWith('/clipboard/history'),
+        );
+        // The sync socket's reconnect may arrive in any order and carries no bearer header.
+        expect(tokens[lastHistory], 'Bearer renewed');
         expect(count('clipboard/item'), 2);
       } finally {
         manager.dispose();
