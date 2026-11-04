@@ -13,6 +13,7 @@ static ClipboardWindow *mainWindow;
 @property NSTimer *timer;
 @property BOOL showingLogin;
 @property BOOL launchedAtLogin;
+@property BOOL allowQuit;
 @end
 // Offer start-at-login once from /Applications; afterwards the user's choice in System Settings wins.
 static void offerLoginItem(){
@@ -34,13 +35,18 @@ static void offerLoginItem(){
  }
  if(done)[defaults setBool:YES forKey:@"loginItemOffered"];
 }
+// Log out, restart and shut down must never be blocked.
+static BOOL systemQuit(){
+ OSType why=[NSAppleEventManager.sharedAppleEventManager.currentAppleEvent attributeDescriptorForKeyword:kAEQuitReason].typeCodeValue;
+ return why==kAELogOut||why==kAEReallyLogOut||why==kAEShowRestartDialog||why==kAERestart||why==kAEShowShutdownDialog||why==kAEShutDown;
+}
 @implementation ClipboardApp
 -(void)applicationWillFinishLaunching:(NSNotification*)notice {
  NSAppleEventDescriptor *event=NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
  self.launchedAtLogin=[NSProcessInfo.processInfo.arguments containsObject:@"--background"]||(event.eventID==kAEOpenApplication&&[event paramDescriptorForKeyword:keyAEPropData].enumCodeValue==keyAELaunchedAsLogInItem);
 }
 -(void)applicationDidFinishLaunching:(NSNotification*)notice {
- [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+ [NSApp setActivationPolicy:self.launchedAtLogin?NSApplicationActivationPolicyAccessory:NSApplicationActivationPolicyRegular];
  tray=[[NSStatusBar systemStatusBar]statusItemWithLength:NSVariableStatusItemLength];
  NSImage *statusIcon=[[NSImage alloc]initWithContentsOfFile:[NSBundle.mainBundle pathForResource:@"StatusIcon" ofType:@"png"]];
  if(statusIcon){statusIcon.size=NSMakeSize(18,18);[statusIcon setTemplate:YES];tray.button.image=statusIcon;}else{tray.button.title=@"▣";}
@@ -49,11 +55,12 @@ static void offerLoginItem(){
  for(NSArray *entry in @[@[@"登录 / 切换账号",NSStringFromSelector(@selector(login))],@[@"历史记录",NSStringFromSelector(@selector(showHistory))],@[@"解锁旧记录",NSStringFromSelector(@selector(unlock))],@[@"同步当前剪贴板",NSStringFromSelector(@selector(sync))],@[@"暂停 / 恢复",NSStringFromSelector(@selector(pause))],@[@"退出登录",NSStringFromSelector(@selector(logout))],@[@"退出",NSStringFromSelector(@selector(quit))]]){
   NSMenuItem *item=[[NSMenuItem alloc]initWithTitle:entry[0] action:NSSelectorFromString(entry[1]) keyEquivalent:@""];item.target=self;[menu addItem:item];
  }
- NSMenu *bar=[NSMenu new];NSMenuItem *appMenu=[NSMenuItem new];[bar addItem:appMenu];NSMenu *commands=[NSMenu new];NSMenuItem *open=[[NSMenuItem alloc]initWithTitle:@"打开共享剪贴板" action:@selector(showHistory) keyEquivalent:@"0"];open.target=self;[commands addItem:open];[commands addItem:NSMenuItem.separatorItem];NSMenuItem *exit=[[NSMenuItem alloc]initWithTitle:@"退出共享剪贴板" action:@selector(quit) keyEquivalent:@"q"];exit.target=self;[commands addItem:exit];appMenu.submenu=commands;NSApp.mainMenu=bar;
+ NSMenu *bar=[NSMenu new];NSMenuItem *appMenu=[NSMenuItem new];[bar addItem:appMenu];NSMenu *commands=[NSMenu new];NSMenuItem *open=[[NSMenuItem alloc]initWithTitle:@"打开共享剪贴板" action:@selector(showHistory) keyEquivalent:@"0"];open.target=self;[commands addItem:open];[commands addItem:NSMenuItem.separatorItem];NSMenuItem *exit=[[NSMenuItem alloc]initWithTitle:@"关闭窗口（菜单栏继续同步）" action:@selector(hideToMenuBar) keyEquivalent:@"q"];exit.target=self;[commands addItem:exit];appMenu.submenu=commands;NSApp.mainMenu=bar;
  tray.menu=menu;lastChange=NSPasteboard.generalPasteboard.changeCount;
  self.timer=[NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(tick) userInfo:nil repeats:YES];self.timer.tolerance=.25;
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(sleep:) name:NSWorkspaceWillSleepNotification object:nil];
  [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(wake:) name:NSWorkspaceDidWakeNotification object:nil];
+ [[[NSWorkspace sharedWorkspace]notificationCenter]addObserver:self selector:@selector(powerOff:) name:NSWorkspaceWillPowerOffNotification object:nil];
  [[NSDistributedNotificationCenter defaultCenter]addObserver:self selector:@selector(sessionChanged:) name:@"chat.clawkit.shared-clipboard.session" object:nil suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
  mainWindow=[ClipboardWindow new];sc_start();if(!self.launchedAtLogin)[mainWindow open];
  offerLoginItem();
@@ -87,7 +94,14 @@ static void offerLoginItem(){
 -(void)sync{sc_event(2,"");}
 -(void)pause{sc_event(7,"");}
 -(void)logout{sc_event(8,"");mainWindow.loggedIn=NO;[mainWindow clear];}
--(void)quit{native_ws_close();[NSApp terminate:nil];}
+// Only the menu-bar "退出" ends the app; Dock Quit and ⌘Q keep it syncing in the menu bar.
+-(void)quit{self.allowQuit=YES;native_ws_close();[NSApp terminate:nil];}
+-(void)hideToMenuBar{[mainWindow hide];}
+-(void)powerOff:(NSNotification*)n{self.allowQuit=YES;}
+-(NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender{
+ if(self.allowQuit||systemQuit())return NSTerminateNow;
+ [mainWindow hide];return NSTerminateCancel;
+}
 @end
 static BOOL reopenExistingApplication(){
  NSString *bundle=NSBundle.mainBundle.bundleIdentifier;if(!bundle)return NO;

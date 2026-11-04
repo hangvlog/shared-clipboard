@@ -67,8 +67,9 @@ static NSView *card(NSView *child){
 -(void)sync{if(self.loggedIn)sc_event(2,"");else [self account];}
 -(void)refresh{if(self.loggedIn){self.statusLabel.stringValue=@"正在读取历史记录…";sc_event(5,"");}else [self status:@"请先登录，同一账号的记录会显示在这里"];}
 -(void)duplicate{NSInteger i=self.table.selectedRow;if(self.duplicateButton.enabled&&i>=0&&i<(NSInteger)self.ids.count)sc_event(6,self.ids[i].UTF8String);}
--(void)open{[NSApp activateIgnoringOtherApps:YES];[self.window makeKeyAndOrderFront:nil];sc_event(13,"1");[self refresh];}
--(BOOL)windowShouldClose:(NSWindow*)window{[window orderOut:nil];sc_event(13,"0");sc_event(9,"");[self clear];return NO;}
+-(void)open{[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];[NSApp activateIgnoringOtherApps:YES];[self.window makeKeyAndOrderFront:nil];sc_event(13,"1");[self refresh];}
+-(BOOL)windowShouldClose:(NSWindow*)window{[window orderOut:nil];sc_event(13,"0");sc_event(9,"");[self clear];[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];return NO;}
+-(void)hide{[self windowShouldClose:self.window];}
 -(void)status:(NSString*)value{self.connectionState=value;self.statusLabel.stringValue=value;}
 -(void)beginHistory{NSInteger i=self.table.selectedRow;self.selectedId=i>=0&&i<(NSInteger)self.ids.count?self.ids[i]:@"";self.loading=YES;[self.ids removeAllObjects];[self.labels removeAllObjects];self.duplicateButton.enabled=NO;}
 -(void)addId:(NSString*)identifier label:(NSString*)value{if(self.window.visible){[self.ids addObject:identifier];[self.labels addObject:value];}}
